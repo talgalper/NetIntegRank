@@ -17,7 +17,7 @@ process RANKING {
     """
     mkdir -p ranking
 
-    Rscript bin/run_ranking.R \
+    Rscript run_ranking.R \
       --hhnet_metrics ${hhnet_metrics} \
       --druggability ${druggability} \
       --ml_scores ${ml_scores} \
