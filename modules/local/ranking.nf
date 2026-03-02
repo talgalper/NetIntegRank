@@ -23,6 +23,7 @@ process RANKING {
       --ml_scores ${ml_scores} \
       --citations ${citations} \
       --gene_map ${gene_map} \
+      --id_annot_cache ${params.outdir}/ranking/id_annot_cache.tsv \
       --out_tsv ranking/final_ranked.tsv \
       --out_rds ranking/final_ranked.rds
 
