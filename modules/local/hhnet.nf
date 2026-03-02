@@ -22,6 +22,7 @@ process HHNET {
       --num_permutations ${params.hhnet_num_permutations} \
       --network_name ${params.hhnet_network_name} \
       --score_name ${params.hhnet_score_name} \
+      --compile_fortran ${params.hhnet_compile_fortran} \
       --outdir hhnet
 
     test -s hhnet/metrics.tsv
