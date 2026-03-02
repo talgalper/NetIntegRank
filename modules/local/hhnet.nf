@@ -18,7 +18,7 @@ process HHNET {
     run_hhnet.sh \
       --de ${de_results} \
       --ppi ${ppi_network} \
-      --num_cores \
+      --num_cores ${task.cpus} \
       --outdir hhnet
 
     test -s hhnet/metrics.tsv
