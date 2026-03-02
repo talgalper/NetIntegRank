@@ -59,6 +59,102 @@ command -v python >/dev/null 2>&1 || { echo "ERROR: python not found in PATH" >&
 command -v parallel >/dev/null 2>&1 || { echo "ERROR: GNU parallel is required but not found" >&2; exit 2; }
 [[ "$COMPILE_FORTRAN" =~ ^(auto|always|never)$ ]] || { echo "ERROR: --compile_fortran must be one of auto|always|never" >&2; exit 2; }
 
+validate_header_columns() {
+  local file_path="$1"
+  local label="$2"
+  shift 2
+
+  python - "$file_path" "$label" "$@" <<'PY'
+import csv
+import pathlib
+import sys
+
+file_path = pathlib.Path(sys.argv[1])
+label = sys.argv[2]
+required = [c.lower() for c in sys.argv[3:]]
+
+if not file_path.exists():
+    print(f"ERROR: Input file does not exist for {label}: {file_path}", file=sys.stderr)
+    sys.exit(2)
+
+with file_path.open(newline='') as handle:
+    sample = handle.read(4096)
+    handle.seek(0)
+    if not sample.strip():
+        print(f"ERROR: Input file is empty for {label}: {file_path}", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters='\t,')
+    except csv.Error:
+        dialect = csv.excel_tab
+
+    reader = csv.reader(handle, dialect)
+    try:
+        header = next(reader)
+    except StopIteration:
+        print(f"ERROR: Input file is empty for {label}: {file_path}", file=sys.stderr)
+        sys.exit(2)
+
+header_lc = [h.strip().lower() for h in header]
+missing = [col for col in required if col not in header_lc]
+if missing:
+    print(
+        f"ERROR: Input validation failed for {label} ({file_path}). Missing required columns: {', '.join(missing)}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+PY
+}
+
+normalize_with_header() {
+  local file_path="$1"
+  local out_path="$2"
+  local col1="$3"
+  local col2="$4"
+
+  python - "$file_path" "$out_path" "$col1" "$col2" <<'PY'
+import csv
+import pathlib
+import sys
+
+in_path = pathlib.Path(sys.argv[1])
+out_path = pathlib.Path(sys.argv[2])
+col1 = sys.argv[3].lower()
+col2 = sys.argv[4].lower()
+
+with in_path.open(newline='') as src:
+    sample = src.read(4096)
+    src.seek(0)
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters='\t,')
+    except csv.Error:
+        dialect = csv.excel_tab
+    reader = csv.reader(src, dialect)
+    header = next(reader)
+    header_lc = [h.strip().lower() for h in header]
+    i1 = header_lc.index(col1)
+    i2 = header_lc.index(col2)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open('w', newline='') as dst:
+        writer = csv.writer(dst, delimiter='\t', lineterminator='\n')
+        for row in reader:
+            if not row:
+                continue
+            if len(row) <= max(i1, i2):
+                continue
+            v1 = row[i1].strip()
+            v2 = row[i2].strip()
+            if not v1 or not v2:
+                continue
+            writer.writerow((v1, v2))
+PY
+}
+
+validate_header_columns "$DE" "de" "node" "hhnet_score"
+validate_header_columns "$PPI" "ppi" "node1" "node2"
+
 DATA_DIR="${OUTDIR}/data"
 INTERMEDIATE_DIR="${OUTDIR}/intermediate"
 RESULTS_DIR="${OUTDIR}/results"
@@ -69,8 +165,8 @@ mkdir -p "${INTERMEDIATE_DIR}/${NETWORK}" "${INTERMEDIATE_DIR}/${NETWORK}_${SCOR
 EDGE_LIST_FILE="edge_list.tsv"
 INDEX_GENE_FILE="index_gene.tsv"
 
-cp "$PPI" "${DATA_DIR}/${EDGE_LIST_FILE}"
-cp "$DE" "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv"
+normalize_with_header "$PPI" "${DATA_DIR}/${EDGE_LIST_FILE}" "node1" "node2"
+normalize_with_header "$DE" "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv" "node" "hhnet_score"
 
 if [[ -n "$INDEX_GENE" ]]; then
   cp "$INDEX_GENE" "${DATA_DIR}/${INDEX_GENE_FILE}"
