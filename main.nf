@@ -8,7 +8,7 @@ workflow {
   // DE results (input) should be a file path, e.g. CSV/TSV
   def de_ch  = Channel.fromPath(params.de_results, checkIfExists: true)
 
-  // PPI is required unless you decide to bake it into the HHnet container
+  // PPI defaults to params.ppi_network and can be overridden with --ppi_network
   def ppi_ch = Channel.fromPath(params.ppi_network, checkIfExists: true)
 
   hhnet_out = HHNET(de_ch, ppi_ch)
@@ -18,7 +18,6 @@ workflow {
     hhnet_out.metrics,
     Channel.fromPath(params.druggability, checkIfExists: true),
     Channel.fromPath(params.ml_scores,   checkIfExists: true),
-    Channel.fromPath(params.citations,   checkIfExists: true),
-    Channel.fromPath(params.gene_map,    checkIfExists: true)
+    Channel.fromPath(params.citations,   checkIfExists: true)
   )
 }
