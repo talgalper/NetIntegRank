@@ -9,11 +9,46 @@ NetIntegRank runs two stages:
 
 ## Inputs
 - DE results (user-supplied)
-- PPI network (default provided; optional user override)
+- PPI network (`assets/STRING_physical_ENSG.tsv` is used by default; optional user override with `--ppi_network`)
 - Druggability table
 - ML score table
 - Citation score table
-- Gene ID mapping table (precomputed; no biomaRt dependency)
+- Gene ID mapping table (`--gene_map`, optional)
+  - If not provided, ranking falls back to biomaRt annotation (`external_gene_name -> uniprot_gn_id`).
+  - biomaRt lookup results are cached for reuse across reruns.
+
+## PPI network format (exact)
+The HHnet wrapper expects a **tab-delimited edge list** with:
+- **No header row**
+- **Column 1:** node ID (integer)
+- **Column 2:** node ID (integer)
+
+Example:
+
+```tsv
+1	2
+1	3
+2	3
+```
+
+See https://github.com/raphael-group/hierarchical-hotnet.git for more details
+
+## Ranking script behavior
+`bin/run_ranking.R` is now argument-driven and writes deterministic outputs:
+
+Required arguments:
+- `--hhnet_metrics`
+- `--druggability`
+- `--ml_scores`
+- `--citations`
+- `--out_tsv`
+- `--out_rds`
+
+Optional arguments:
+- `--gene_map` (skip biomaRt when available)
+- `--id_annot_cache` (cache file for biomaRt conversions; defaults to `<dirname(out_tsv)>/id_annot_cache.tsv`)
+
+The Nextflow ranking module passes a stable cache path under `${params.outdir}/ranking/id_annot_cache.tsv` so cached conversions can be reused between runs.
 
 ## HHNet Python environment (pinned)
 HHNet depends on older Python-era packages. This repo now includes a pinned Conda environment at:
@@ -37,6 +72,9 @@ nextflow run main.nf -profile conda \
   --citations path/to/citations.tsv \
   --gene_map path/to/gene_map.tsv
 ```
+
+If you omit `--gene_map`, biomaRt annotation + cache will be used:
+
 
 ### Fortran compile behavior
 `bin/run_hhnet.sh` supports:
