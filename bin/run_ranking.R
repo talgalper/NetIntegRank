@@ -75,6 +75,29 @@ require_numeric <- function(df, cols, table_label, table_path) {
   }
 }
 
+normalize_id_column <- function(df, colname) {
+  df[[colname]] <- trimws(as.character(df[[colname]]))
+  df[[colname]][df[[colname]] == ""] <- NA_character_
+  df
+}
+
+require_non_missing <- function(df, cols, table_label, table_path) {
+  missing_counts <- vapply(cols, function(col) sum(is.na(df[[col]]) | trimws(as.character(df[[col]])) == ""), integer(1))
+  bad_cols <- names(missing_counts)[missing_counts > 0]
+  if (length(bad_cols) > 0) {
+    bad_msg <- paste(sprintf("%s (%d missing)", bad_cols, missing_counts[bad_cols]), collapse = ", ")
+    stop(
+      sprintf(
+        "Input validation failed for %s (%s). Required identifier/value columns contain missing values: %s",
+        table_label,
+        table_path,
+        bad_msg
+      ),
+      call. = FALSE
+    )
+  }
+}
+
 upsert_annotation_cache <- function(cache_path, input_type, convert_to, annotation_df) {
   cache_cols <- c(input_type, convert_to)
   cache_df <- annotation_df[, cache_cols, drop = FALSE]
@@ -199,7 +222,7 @@ ml_scores <- read_table_auto(args$ml_scores)
 citations <- read_table_auto(args$citations)
 
 require_columns(hhnet_metrics, c("node", "hhnet_score"), "hhnet_metrics", args$hhnet_metrics)
-require_columns(druggability, c("node", "highest_score"), "druggability", args$druggability)
+require_columns(druggability, c("uniprot_gn_id", "highest_score"), "druggability", args$druggability)
 require_columns(ml_scores, c("uniprot_gn_id", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_columns(citations, c("external_gene_name", "counts"), "citations", args$citations)
 
@@ -208,23 +231,36 @@ require_numeric(druggability, c("highest_score"), "druggability", args$druggabil
 require_numeric(ml_scores, c("Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_numeric(citations, c("counts"), "citations", args$citations)
 
+hhnet_metrics <- normalize_id_column(hhnet_metrics, "node")
+druggability <- normalize_id_column(druggability, "uniprot_gn_id")
+ml_scores <- normalize_id_column(ml_scores, "uniprot_gn_id")
+citations <- normalize_id_column(citations, "external_gene_name")
+
+require_non_missing(hhnet_metrics, c("node", "hhnet_score"), "hhnet_metrics", args$hhnet_metrics)
+require_non_missing(druggability, c("uniprot_gn_id", "highest_score"), "druggability", args$druggability)
+require_non_missing(ml_scores, c("uniprot_gn_id", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
+require_non_missing(citations, c("external_gene_name", "counts"), "citations", args$citations)
 
 id_annot_cache_path <- args$id_annot_cache
 if (is.null(id_annot_cache_path) || !nzchar(id_annot_cache_path)) {
   id_annot_cache_path <- file.path(dirname(args$out_tsv), "id_annot_cache.tsv")
 }
 
-rank_data <- merge(hhnet_metrics, druggability[, c("node", "highest_score")], by = "node", all.x = TRUE, sort = FALSE)
+rank_data <- hhnet_metrics
 if (!is.null(args$gene_map) && nzchar(args$gene_map)) {
   gene_map <- read_table_auto(args$gene_map)
   require_columns(gene_map, c("node", "external_gene_name", "uniprot_gn_id"), "gene_map", args$gene_map)
+  gene_map <- normalize_id_column(gene_map, "node")
+  gene_map <- normalize_id_column(gene_map, "external_gene_name")
+  gene_map <- normalize_id_column(gene_map, "uniprot_gn_id")
+  require_non_missing(gene_map, c("node", "external_gene_name", "uniprot_gn_id"), "gene_map", args$gene_map)
   rank_data <- merge(rank_data, gene_map[, c("node", "external_gene_name", "uniprot_gn_id")], by = "node", all.x = TRUE, sort = FALSE)
 } else {
-  rank_data$external_gene_name <- rank_data$node
-  rank_data <- id_annot(
+  rank_data$ensembl_gene_id <- rank_data$node
+    rank_data <- id_annot(
     data = rank_data,
-    input_type = "external_gene_name",
-    convert_to = c("uniprot_gn_id"),
+    input_type = "ensembl_gene_id",
+    convert_to = c("uniprot_gn_id", "external_gene_name"),
     cache_path = id_annot_cache_path
   )
 }
@@ -232,6 +268,7 @@ if (!is.null(args$gene_map) && nzchar(args$gene_map)) {
 ranking_features <- c("hhnet_score", "highest_score")
 rank_data <- compute_avg_rank(rank_data, ranking_features)
 
+rank_data <- merge(rank_data, druggability[, c("uniprot_gn_id", "highest_score")], by = "uniprot_gn_id", all.x = TRUE, sort = FALSE)
 rank_data <- merge(rank_data, ml_scores[, c("uniprot_gn_id", "Prediction_Score_rf")], by = "uniprot_gn_id", all.x = TRUE, sort = FALSE)
 rank_data <- merge(rank_data, citations[, c("external_gene_name", "counts")], by = "external_gene_name", all.x = TRUE, sort = FALSE)
 
