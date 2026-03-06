@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: run_hhnet.sh --de <de_scores.tsv> --ppi <ppi_edge_list.tsv> --outdir <output_dir> [options]
+
+Required:
+  --de                Gene score file for HHNet (typically differential expression scores)
+  --ppi               PPI edge list file (HHNet-compatible edge list)
+  --outdir            Output directory for Nextflow process outputs
+
+Optional:
+  --index_gene        Precomputed index-gene file; if omitted, an identity mapping is generated
+  --network_name      Network label (default: STRING)
+  --score_name        Score label (default: DE)
+  --num_permutations  Number of score permutations (default: 100)
+  --num_cores         Number of cores for GNU parallel and HHNet post-processing (default: 1)
+  --compile_fortran   Fortran compilation mode: auto|always|never (default: auto)
+  --hhnet_dir         Path to hierarchical-hotnet directory (default: bin/hierarchical-hotnet)
+  -h, --help          Show this help message
+USAGE
+}
+
+DE=""
+PPI=""
+OUTDIR=""
+INDEX_GENE=""
+NETWORK="STRING"
+SCORE="DE"
+NUM_PERMUTATIONS=100
+NUM_CORES=1
+COMPILE_FORTRAN="auto"
+HHNET_DIR="bin/hierarchical-hotnet"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --de) DE="$2"; shift 2 ;;
+    --ppi) PPI="$2"; shift 2 ;;
+    --outdir) OUTDIR="$2"; shift 2 ;;
+    --index_gene) INDEX_GENE="$2"; shift 2 ;;
+    --network_name) NETWORK="$2"; shift 2 ;;
+    --score_name) SCORE="$2"; shift 2 ;;
+    --num_permutations) NUM_PERMUTATIONS="$2"; shift 2 ;;
+    --num_cores) NUM_CORES="$2"; shift 2 ;;
+    --compile_fortran) COMPILE_FORTRAN="$2"; shift 2 ;;
+    --hhnet_dir) HHNET_DIR="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
+  esac
+done
+
+[[ -n "$DE" ]] || { echo "ERROR: --de is required" >&2; exit 2; }
+[[ -n "$PPI" ]] || { echo "ERROR: --ppi is required" >&2; exit 2; }
+[[ -n "$OUTDIR" ]] || { echo "ERROR: --outdir is required" >&2; exit 2; }
+[[ -d "$HHNET_DIR/src" ]] || { echo "ERROR: HHNet src not found at: $HHNET_DIR/src" >&2; exit 2; }
+command -v python >/dev/null 2>&1 || { echo "ERROR: python not found in PATH" >&2; exit 2; }
+command -v parallel >/dev/null 2>&1 || { echo "ERROR: GNU parallel is required but not found" >&2; exit 2; }
+[[ "$COMPILE_FORTRAN" =~ ^(auto|always|never)$ ]] || { echo "ERROR: --compile_fortran must be one of auto|always|never" >&2; exit 2; }
+
+validate_header_columns() {
+  local file_path="$1"
+  local label="$2"
+  shift 2
+
+  python - "$file_path" "$label" "$@" <<'PY'
+import csv
+import pathlib
+import sys
+
+file_path = pathlib.Path(sys.argv[1])
+label = sys.argv[2]
+required = [c.lower() for c in sys.argv[3:]]
+
+if not file_path.exists():
+    print(f"ERROR: Input file does not exist for {label}: {file_path}", file=sys.stderr)
+    sys.exit(2)
+
+with file_path.open(newline='') as handle:
+    sample = handle.read(4096)
+    handle.seek(0)
+    if not sample.strip():
+        print(f"ERROR: Input file is empty for {label}: {file_path}", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters='\t,')
+    except csv.Error:
+        dialect = csv.excel_tab
+
+    reader = csv.reader(handle, dialect)
+    try:
+        header = next(reader)
+    except StopIteration:
+        print(f"ERROR: Input file is empty for {label}: {file_path}", file=sys.stderr)
+        sys.exit(2)
+
+header_lc = [h.strip().lower() for h in header]
+missing = [col for col in required if col not in header_lc]
+if missing:
+    print(
+        f"ERROR: Input validation failed for {label} ({file_path}). Missing required columns: {', '.join(missing)}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+PY
+}
+
+normalize_with_header() {
+  local file_path="$1"
+  local out_path="$2"
+  local col1="$3"
+  local col2="$4"
+
+  python - "$file_path" "$out_path" "$col1" "$col2" <<'PY'
+import csv
+import pathlib
+import sys
+
+in_path = pathlib.Path(sys.argv[1])
+out_path = pathlib.Path(sys.argv[2])
+col1 = sys.argv[3].lower()
+col2 = sys.argv[4].lower()
+
+with in_path.open(newline='') as src:
+    sample = src.read(4096)
+    src.seek(0)
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters='\t,')
+    except csv.Error:
+        dialect = csv.excel_tab
+    reader = csv.reader(src, dialect)
+    header = next(reader)
+    header_lc = [h.strip().lower() for h in header]
+    i1 = header_lc.index(col1)
+    i2 = header_lc.index(col2)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open('w', newline='') as dst:
+        writer = csv.writer(dst, delimiter='\t', lineterminator='\n')
+        for row in reader:
+            if not row:
+                continue
+            if len(row) <= max(i1, i2):
+                continue
+            v1 = row[i1].strip()
+            v2 = row[i2].strip()
+            if not v1 or not v2:
+                continue
+            writer.writerow((v1, v2))
+PY
+}
+
+validate_header_columns "$DE" "de" "node" "hhnet_score"
+validate_header_columns "$PPI" "ppi" "node1" "node2"
+
+DATA_DIR="${OUTDIR}/data"
+INTERMEDIATE_DIR="${OUTDIR}/intermediate"
+RESULTS_DIR="${OUTDIR}/results"
+
+mkdir -p "$DATA_DIR" "$INTERMEDIATE_DIR" "$RESULTS_DIR"
+mkdir -p "${INTERMEDIATE_DIR}/${NETWORK}" "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}"
+
+EDGE_LIST_FILE="edge_list.tsv"
+INDEX_GENE_FILE="index_gene.tsv"
+
+normalize_with_header "$PPI" "${DATA_DIR}/${EDGE_LIST_FILE}" "node1" "node2"
+normalize_with_header "$DE" "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv" "node" "hhnet_score"
+
+if [[ -n "$INDEX_GENE" ]]; then
+  cp "$INDEX_GENE" "${DATA_DIR}/${INDEX_GENE_FILE}"
+else
+  awk 'NR>1{print $1; print $2}' "${DATA_DIR}/${EDGE_LIST_FILE}" | awk 'NF>0' | sort -u | awk 'BEGIN{OFS="\t"} {print $1,$1}' > "${DATA_DIR}/${INDEX_GENE_FILE}"
+fi
+
+pushd "$HHNET_DIR" >/dev/null
+
+if [[ "$COMPILE_FORTRAN" != "never" ]]; then
+  if [[ "$COMPILE_FORTRAN" == "always" ]] || [[ ! -f "src/fortran_module"*.so ]]; then
+    if command -v f2py >/dev/null 2>&1; then
+      echo "Compiling Fortran module..."
+      (cd src && f2py -c fortran_module.f95 -m fortran_module > /dev/null)
+    elif [[ "$COMPILE_FORTRAN" == "always" ]]; then
+      echo "ERROR: --compile_fortran always requested, but f2py is not available" >&2
+      exit 2
+    else
+      echo "WARN: f2py not available; continuing with Python fallback" >&2
+    fi
+  fi
+fi
+
+echo "Construct similarity matrix..."
+python src/construct_similarity_matrix.py \
+  -i   "${DATA_DIR}/${EDGE_LIST_FILE}" \
+  -o   "${INTERMEDIATE_DIR}/${NETWORK}/similarity_matrix.h5" \
+  -bof "${INTERMEDIATE_DIR}/${NETWORK}/beta.txt"
+
+echo "Finding permutation bins..."
+python src/find_permutation_bins.py \
+  -gsf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv" \
+  -igf "${DATA_DIR}/${INDEX_GENE_FILE}" \
+  -elf "${DATA_DIR}/${EDGE_LIST_FILE}" \
+  -ms  1000 \
+  -o   "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/score_bins.tsv"
+
+echo "Permuting scores (${NUM_PERMUTATIONS})..."
+parallel -u -j "$NUM_CORES" --bar \
+  python src/permute_scores.py \
+    -i  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv" \
+    -bf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/score_bins.tsv" \
+    -s  {} \
+    -o  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_{}.tsv" \
+  ::: $(seq "$NUM_PERMUTATIONS")
+
+echo "Constructing hierarchies..."
+parallel -u -j "$NUM_CORES" --bar \
+  python src/construct_hierarchy.py \
+    -smf  "${INTERMEDIATE_DIR}/${NETWORK}/similarity_matrix.h5" \
+    -igf  "${DATA_DIR}/${INDEX_GENE_FILE}" \
+    -gsf  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_{}.tsv" \
+    -helf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_edge_list_{}.tsv" \
+    -higf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_index_gene_{}.tsv" \
+  ::: $(seq 0 "$NUM_PERMUTATIONS")
+
+echo "Processing hierarchies..."
+python src/process_hierarchies.py \
+  -oelf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_edge_list_0.tsv" \
+  -oigf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_index_gene_0.tsv" \
+  -pelf $(for i in $(seq "$NUM_PERMUTATIONS"); do echo "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_edge_list_${i}.tsv"; done) \
+  -pigf $(for i in $(seq "$NUM_PERMUTATIONS"); do echo "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_index_gene_${i}.tsv"; done) \
+  -lsb  10 \
+  -cf   "${RESULTS_DIR}/clusters_${NETWORK}_${SCORE}.tsv" \
+  -pl   "$NETWORK" "$SCORE" \
+  -pf   "${RESULTS_DIR}/sizes_${NETWORK}_${SCORE}.pdf" \
+  -nc   "$NUM_CORES"
+
+popd >/dev/null
+
+# Nextflow-facing outputs
+cp "${RESULTS_DIR}/clusters_${NETWORK}_${SCORE}.tsv" "${OUTDIR}/subnetwork.tsv"
+
+awk 'BEGIN{FS=OFS="\t"} NR==1{print "node","hhnet_score"; next} NF>0{print $1,$2}' \
+  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv" > "${OUTDIR}/metrics.tsv"
+
+test -s "${OUTDIR}/metrics.tsv"
+echo "HHNet run complete: ${OUTDIR}"
