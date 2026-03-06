@@ -34,6 +34,11 @@ Outputs:
 
   Staged copy for Nextflow:
     <outdir>/clusters_<NETWORK>_<SCORE>.tsv
+
+Caching:
+  The similarity matrix is cached globally under <hhnet_dir>/cache/similarity_matrices/
+  using a hash of the indexed PPI edge list. Reusing the same PPI network will therefore
+  reuse the cached similarity_matrix.h5 and beta.txt in later runs.
 USAGE
 }
 
@@ -145,6 +150,9 @@ EDGE_LIST_FILE="${DATA_DIR}/edge_list.tsv"      # indexed
 INDEX_GENE_FILE="${DATA_DIR}/index_gene.tsv"    # index -> gene_id  (IMPORTANT)
 GENES_FILE="${DATA_DIR}/genes_in_ppi.txt"       # one gene_id per line
 SCORES0_FILE="${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv"  # gene_id, abs(score)
+SIMILARITY_MATRIX_FILE="${INTERMEDIATE_DIR}/${NETWORK}/similarity_matrix.h5"
+BETA_FILE="${INTERMEDIATE_DIR}/${NETWORK}/beta.txt"
+SIMILARITY_CACHE_ROOT="${HHNET_DIR}/cache/similarity_matrices"
 
 prepare_ppi_indexed() {
   local in_path="$1"
@@ -407,6 +415,86 @@ print(f"DE: kept {kept} row(s) after abs(score) + filtering to PPI genes.")
 PY
 }
 
+compute_file_sha256() {
+  local in_path="$1"
+  python - "$in_path" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+h = hashlib.sha256()
+with path.open('rb') as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+        h.update(chunk)
+print(h.hexdigest())
+PY
+}
+
+stage_cached_similarity_matrix() {
+  local edge_list_file="$1"
+  local sim_out="$2"
+  local beta_out="$3"
+  local cache_root="$4"
+
+  local ppi_hash
+  ppi_hash="$(compute_file_sha256 "$edge_list_file")"
+
+  local cache_dir="${cache_root}/${ppi_hash}"
+  local cache_sim="${cache_dir}/similarity_matrix.h5"
+  local cache_beta="${cache_dir}/beta.txt"
+  local lock_dir="${cache_dir}.lock"
+
+  mkdir -p "$cache_root"
+
+  if [[ -s "$cache_sim" && -s "$cache_beta" ]]; then
+    echo "Using cached similarity matrix for PPI hash: ${ppi_hash}"
+    ln -sfn "$cache_sim" "$sim_out"
+    ln -sfn "$cache_beta" "$beta_out"
+    return 0
+  fi
+
+  local have_lock=0
+  if mkdir "$lock_dir" 2>/dev/null; then
+    have_lock=1
+    trap '[[ "$have_lock" -eq 1 ]] && rm -rf "$lock_dir"' RETURN
+  else
+    echo "Waiting for existing similarity-matrix cache build to finish for PPI hash: ${ppi_hash}"
+    while [[ -d "$lock_dir" ]]; do
+      sleep 5
+    done
+
+    if [[ -s "$cache_sim" && -s "$cache_beta" ]]; then
+      echo "Using cached similarity matrix for PPI hash: ${ppi_hash}"
+      ln -sfn "$cache_sim" "$sim_out"
+      ln -sfn "$cache_beta" "$beta_out"
+      return 0
+    fi
+
+    if mkdir "$lock_dir" 2>/dev/null; then
+      have_lock=1
+      trap '[[ "$have_lock" -eq 1 ]] && rm -rf "$lock_dir"' RETURN
+    else
+      echo "ERROR: Failed to acquire similarity-matrix cache lock for PPI hash: ${ppi_hash}" >&2
+      exit 2
+    fi
+  fi
+
+  mkdir -p "$cache_dir"
+
+  echo "Constructing similarity matrix (cache miss) for PPI hash: ${ppi_hash}"
+  python src/construct_similarity_matrix.py \
+    -i   "$edge_list_file" \
+    -o   "$cache_sim" \
+    -bof "$cache_beta"
+
+  [[ -s "$cache_sim" ]]  || { echo "ERROR: Cached similarity matrix was not created: $cache_sim" >&2; exit 2; }
+  [[ -s "$cache_beta" ]] || { echo "ERROR: Cached beta file was not created: $cache_beta" >&2; exit 2; }
+
+  ln -sfn "$cache_sim" "$sim_out"
+  ln -sfn "$cache_beta" "$beta_out"
+}
+
 echo "Preparing PPI: generating index_gene.tsv + indexed edge_list.tsv (and removing duplicates / extra columns as needed)..."
 prepare_ppi_indexed "$PPI" "$EDGE_LIST_FILE" "$INDEX_GENE_FILE" "$GENES_FILE"
 
@@ -429,11 +517,12 @@ if [[ "$COMPILE_FORTRAN" != "never" ]]; then
   fi
 fi
 
-echo "Construct similarity matrix..."
-python src/construct_similarity_matrix.py \
-  -i   "$EDGE_LIST_FILE" \
-  -o   "${INTERMEDIATE_DIR}/${NETWORK}/similarity_matrix.h5" \
-  -bof "${INTERMEDIATE_DIR}/${NETWORK}/beta.txt"
+echo "Preparing similarity matrix cache..."
+stage_cached_similarity_matrix \
+  "$EDGE_LIST_FILE" \
+  "$SIMILARITY_MATRIX_FILE" \
+  "$BETA_FILE" \
+  "$SIMILARITY_CACHE_ROOT"
 
 echo "Finding permutation bins..."
 python src/find_permutation_bins.py \
@@ -455,7 +544,7 @@ parallel -u -j "$NUM_CORES" --bar \
 echo "Constructing hierarchies..."
 parallel -u -j "$NUM_CORES" --bar \
   python src/construct_hierarchy.py \
-    -smf  "${INTERMEDIATE_DIR}/${NETWORK}/similarity_matrix.h5" \
+    -smf  "$SIMILARITY_MATRIX_FILE" \
     -igf  "$INDEX_GENE_FILE" \
     -gsf  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_{}.tsv" \
     -helf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_edge_list_{}.tsv" \
