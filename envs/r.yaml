@@ -1,0 +1,9 @@
+name: netintegrank-r
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.3
+  - r-optparse
+  - r-igraph
+  - bioconductor-biomart
