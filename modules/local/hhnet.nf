@@ -1,30 +1,32 @@
 process HHNET {
-  tag "hhnet"
+  tag "${params.hhnet_network_name}_${params.hhnet_score_name}"
 
-  publishDir "${params.outdir}/hhnet", mode: 'copy'
+  publishDir "${params.outdir}/hhnet", mode: 'copy', overwrite: true
 
   input:
-    path de_results
-    path ppi_network
+    path de_scores
+    path ppi_edge_list
 
   output:
-    path "hhnet/metrics.tsv", emit: metrics
-    path "hhnet/subnetwork.tsv", optional: true, emit: subnetwork
+    path "clusters_${params.hhnet_network_name}_${params.hhnet_score_name}.tsv", emit: clusters
 
   script:
-    """
-    mkdir -p hhnet
+    def hhnetDirArg = params.hhnet_dir ? "--hhnet_dir ${params.hhnet_dir}" : ""
+    def runIdArg    = params.hhnet_run_id ? "--run_id ${params.hhnet_run_id}" : ""
 
+    """
     run_hhnet.sh \
-      --de ${de_results} \
-      --ppi ${ppi_network} \
-      --num_cores ${task.cpus} \
-      --num_permutations ${params.hhnet_num_permutations} \
+      --de ${de_scores} \
+      --ppi ${ppi_edge_list} \
+      --outdir . \
+      ${runIdArg} \
       --network_name ${params.hhnet_network_name} \
       --score_name ${params.hhnet_score_name} \
+      --num_permutations ${params.hhnet_num_permutations} \
+      --num_cores ${task.cpus} \
       --compile_fortran ${params.hhnet_compile_fortran} \
-      --outdir hhnet
+      ${hhnetDirArg}
 
-    test -s hhnet/metrics.tsv
+    test -s clusters_${params.hhnet_network_name}_${params.hhnet_score_name}.tsv
     """
 }
