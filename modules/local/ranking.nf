@@ -1,3 +1,4 @@
+// modules/local/ranking.nf
 process RANKING {
   tag "ranking"
   publishDir "${params.outdir}/ranking", mode: 'copy', overwrite: true
@@ -8,14 +9,13 @@ process RANKING {
     path druggability
     path ml_scores
     path citations
-    path gene_map, optional: true
+    path gene_map
 
   output:
-    path "ranking/final_ranked.tsv"
-    path "ranking/final_ranked.rds", optional: true
+    path "final_ranked.tsv"
+    path "final_ranked.rds", optional: true
 
   script:
-    // Default to neighbour network
     def useNeighbour = (params.ranking_network ?: "neighbours") == "neighbours"
     def hhnet_metrics = useNeighbour ? neighbour_metrics : subnet_metrics
 
@@ -23,8 +23,6 @@ process RANKING {
     def featArg    = params.ranking_features ? "--ranking_features ${params.ranking_features}" : ""
 
     """
-    mkdir -p ranking
-
     Rscript run_ranking.R \
       --hhnet_metrics ${hhnet_metrics} \
       --druggability ${druggability} \
@@ -37,5 +35,16 @@ process RANKING {
       --out_rds final_ranked.rds
 
     test -s final_ranked.tsv
+    """
+
+  stub:
+    """
+    cat > final_ranked.tsv <<'EOF'
+gene_symbol	final_score
+GENE1	0.91
+GENE2	0.73
+EOF
+
+    touch final_ranked.rds
     """
 }
