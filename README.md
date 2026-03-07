@@ -128,7 +128,7 @@ If not provided, `run_ranking.R` will use biomaRt and cache results.
 * `--hhnet_plot_max_nodes` (default: 5000)
 * `--hhnet_extra_colours` (default: "")
 
-  * colours for clusters 11+; clusters 1–10 are fixed to:
+  * colours for clusters 11+; clusters 1–10 are fixed (for my convenience) to:
     tomato, springgreen, royalblue, maroon1, gold, orchid, cyan, yellowgreen, mediumseagreen, saddlebrown
 
 Outputs are written to:
