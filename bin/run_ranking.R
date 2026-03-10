@@ -10,9 +10,9 @@ option_list <- list(
   make_option("--druggability", type = "character",
               help = "Path to druggability table (TSV/CSV). Required columns: uniprot_gn_id, highest_score."),
   make_option("--ml_scores", type = "character",
-              help = "Path to ML scores table (TSV/CSV). Required columns: uniprot_gn_id, Prediction_Score_rf."),
+              help = "Path to ML scores table (TSV/CSV). Required columns: Protein, Prediction_Score_rf."),
   make_option("--citations", type = "character",
-              help = "Path to citation counts table (TSV/CSV). Required columns: external_gene_name, counts."),
+              help = "Path to citation counts table (TSV/CSV). Required columns: symbol, counts."),
   make_option("--gene_map", type = "character", default = NULL,
               help = "Optional mapping table (TSV/CSV). Recommended columns: ensembl_gene_id, uniprot_gn_id (external_gene_name optional)."),
   make_option("--ranking_features", type = "character",
@@ -23,7 +23,11 @@ option_list <- list(
   make_option("--out_rds", type = "character",
               help = "Output RDS path for final ranking."),
   make_option("--id_annot_cache", type = "character", default = NULL,
-              help = "Optional cache path for biomaRt ID annotations. Reused across runs when provided.")
+              help = "Optional cache path for biomaRt ID annotations. Reused across runs when provided."),
+  make_option("--out_incomplete_tsv", type = "character", default = NULL,
+              help = "Optional output TSV path for rows removed due to incomplete post-merge data."),
+  make_option("--out_incomplete_rds", type = "character", default = NULL,
+              help = "Optional output RDS path for rows removed due to incomplete post-merge data.")
 )
 
 parser <- OptionParser(option_list = option_list)
@@ -109,7 +113,7 @@ compute_avg_rank <- function(df, feature_cols) {
   cbind(df, as.data.frame(rank_matrix, check.names = FALSE))
 }
 
-# Original id_annot (unchanged behaviour; still only supports uniprot_gn_id + external_gene_name)
+# Original id_annot
 id_annot <- function(data, input_type, convert_to, cache_path = NULL) {
   if (!input_type %in% colnames(data)) {
     stop(sprintf("id_annot input column '%s' not found in data.", input_type), call. = FALSE)
@@ -188,13 +192,59 @@ id_annot <- function(data, input_type, convert_to, cache_path = NULL) {
 }
 
 primary_id <- function(x) {
-  x <- trimws(as.character(x))
-  x[is.na(x) | x == ""] <- NA_character_
-  vapply(strsplit(ifelse(is.na(x), "", x), ";", fixed = TRUE), function(parts) {
+  if (is.null(x)) return(character(0))
+
+  x <- unlist(x, use.names = FALSE)
+  x <- as.character(x)
+  x <- trimws(x)
+  x[!nzchar(x)] <- NA_character_
+
+  split_x <- strsplit(replace(x, is.na(x), ""), ";", fixed = TRUE)
+
+  vapply(split_x, function(parts) {
     parts <- trimws(parts)
     parts <- parts[nzchar(parts)]
     if (length(parts) == 0) NA_character_ else parts[1]
   }, character(1))
+}
+
+flag_incomplete_rows <- function(df, required_cols) {
+  missing_cols <- setdiff(required_cols, colnames(df))
+  if (length(missing_cols) > 0) {
+    stop(sprintf("Cannot assess incomplete rows. Missing columns in merged table: %s",
+                 paste(missing_cols, collapse = ", ")), call. = FALSE)
+  }
+
+  missing_matrix <- sapply(required_cols, function(col) {
+    x <- df[[col]]
+    if (is.character(x)) {
+      is.na(x) | trimws(x) == ""
+    } else {
+      is.na(x)
+    }
+  }, simplify = "matrix")
+
+  if (length(required_cols) == 1) {
+    missing_matrix <- matrix(missing_matrix, ncol = 1)
+    colnames(missing_matrix) <- required_cols
+  }
+
+  incomplete_idx <- apply(missing_matrix, 1, any)
+  missing_fields <- apply(missing_matrix, 1, function(x) {
+    paste(required_cols[which(x)], collapse = ";")
+  })
+
+  incomplete_rows <- df[incomplete_idx, , drop = FALSE]
+  if (nrow(incomplete_rows) > 0) {
+    incomplete_rows$missing_fields <- missing_fields[incomplete_idx]
+  }
+
+  complete_rows <- df[!incomplete_idx, , drop = FALSE]
+
+  list(
+    complete = complete_rows,
+    incomplete = incomplete_rows
+  )
 }
 
 # ------------------------
@@ -214,8 +264,8 @@ required_hh_cols <- c(
 )
 require_columns(hhnet_metrics, required_hh_cols, "hhnet_metrics", args$hhnet_metrics)
 require_columns(druggability, c("uniprot_gn_id", "highest_score"), "druggability", args$druggability)
-require_columns(ml_scores, c("uniprot_gn_id", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
-require_columns(citations, c("external_gene_name", "counts"), "citations", args$citations)
+require_columns(ml_scores, c("Protein", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
+require_columns(citations, c("symbol", "counts"), "citations", args$citations)
 
 require_numeric(hhnet_metrics, c("degree","betweenness","closeness","eigen_centrality","page_rank"), "hhnet_metrics", args$hhnet_metrics)
 require_numeric(druggability, c("highest_score"), "druggability", args$druggability)
@@ -229,10 +279,24 @@ druggability  <- normalize_id_column(druggability, "uniprot_gn_id")
 ml_scores     <- normalize_id_column(ml_scores, "uniprot_gn_id")
 citations     <- normalize_id_column(citations, "external_gene_name")
 
-require_non_missing(hhnet_metrics, c("ensembl_gene_id","external_gene_name"), "hhnet_metrics", args$hhnet_metrics)
+require_non_missing(hhnet_metrics, c("ensembl_gene_id"), "hhnet_metrics", args$hhnet_metrics)
 require_non_missing(druggability, c("uniprot_gn_id","highest_score"), "druggability", args$druggability)
-require_non_missing(ml_scores, c("uniprot_gn_id","Prediction_Score_rf"), "ml_scores", args$ml_scores)
-require_non_missing(citations, c("external_gene_name","counts"), "citations", args$citations)
+require_non_missing(ml_scores, c("Protein","Prediction_Score_rf"), "ml_scores", args$ml_scores)
+require_non_missing(citations, c("symbol","counts"), "citations", args$citations)
+
+# Derive default filenames if the user does not supply them for incomplete cases file
+if (is.null(args$out_incomplete_tsv) || !nzchar(args$out_incomplete_tsv)) {
+  args$out_incomplete_tsv <- sub("\\.tsv$", "_incomplete.tsv", args$out_tsv, ignore.case = TRUE)
+  if (identical(args$out_incomplete_tsv, args$out_tsv)) {
+    args$out_incomplete_tsv <- paste0(args$out_tsv, "_incomplete.tsv")
+  }
+}
+if (is.null(args$out_incomplete_rds) || !nzchar(args$out_incomplete_rds)) {
+  args$out_incomplete_rds <- sub("\\.rds$", "_incomplete.rds", args$out_rds, ignore.case = TRUE)
+  if (identical(args$out_incomplete_rds, args$out_rds)) {
+    args$out_incomplete_rds <- paste0(args$out_rds, "_incomplete.rds")
+  }
+}
 
 id_annot_cache_path <- args$id_annot_cache
 if (is.null(id_annot_cache_path) || !nzchar(id_annot_cache_path)) {
@@ -240,13 +304,6 @@ if (is.null(id_annot_cache_path) || !nzchar(id_annot_cache_path)) {
 }
 
 rank_data <- hhnet_metrics
-
-# Ensure uniprot exists (needed for druggability + ML joins)
-if (!"uniprot_gn_id" %in% colnames(rank_data)) rank_data$uniprot_gn_id <- NA_character_
-
-# Prefer a primary uniprot for joins (handles "P12345;Q9..." cases)
-rank_data$uniprot_gn_id_primary <- primary_id(rank_data$uniprot_gn_id)
-rank_data$external_gene_name_primary <- primary_id(rank_data$external_gene_name)
 
 # ------------------------
 # If gene_map provided, fill/override uniprot ids
@@ -277,12 +334,21 @@ if (!is.null(args$gene_map) && nzchar(args$gene_map)) {
   rank_data <- id_annot(
     data = rank_data,
     input_type = "ensembl_gene_id",
-    convert_to = c("uniprot_gn_id", "external_gene_name"),
+    convert_to = c("uniprot_gn_id"),
     cache_path = id_annot_cache_path
   )
-  rank_data$uniprot_gn_id_primary <- primary_id(rank_data$uniprot_gn_id)
-  rank_data$external_gene_name_primary <- primary_id(rank_data$external_gene_name)
 }
+
+# Ensure expected ID columns exist after annotation/mapping
+if (!"uniprot_gn_id" %in% colnames(rank_data)) {
+  rank_data$uniprot_gn_id <- NA_character_
+}
+if (!"external_gene_name" %in% colnames(rank_data)) {
+  rank_data$external_gene_name <- NA_character_
+}
+
+rank_data$uniprot_gn_id_primary <- primary_id(rank_data$uniprot_gn_id)
+rank_data$external_gene_name_primary <- primary_id(rank_data$external_gene_name)
 
 # ------------------------
 # Merge external feature tables (always appended, not ranked unless user includes them)
@@ -291,11 +357,11 @@ if (!is.null(args$gene_map) && nzchar(args$gene_map)) {
 rank_data <- merge(rank_data, druggability[, c("uniprot_gn_id","highest_score")],
                    by.x = "uniprot_gn_id_primary", by.y = "uniprot_gn_id", all.x = TRUE, sort = FALSE)
 
-rank_data <- merge(rank_data, ml_scores[, c("uniprot_gn_id","Prediction_Score_rf")],
-                   by.x = "uniprot_gn_id_primary", by.y = "uniprot_gn_id", all.x = TRUE, sort = FALSE)
+rank_data <- merge(rank_data, ml_scores[, c("Protein","Prediction_Score_rf")],
+                   by.x = "uniprot_gn_id_primary", by.y = "Protein", all.x = TRUE, sort = FALSE)
 
-rank_data <- merge(rank_data, citations[, c("external_gene_name","counts")],
-                   by.x = "external_gene_name_primary", by.y = "external_gene_name", all.x = TRUE, sort = FALSE)
+rank_data <- merge(rank_data, citations[, c("symbol","counts")],
+                   by.x = "external_gene_name_primary", by.y = "symbol", all.x = TRUE, sort = FALSE)
 
 # ------------------------
 # Ranking (user-specified features; default excludes ML + citations)
@@ -304,6 +370,28 @@ rank_data <- merge(rank_data, citations[, c("external_gene_name","counts")],
 ranking_features <- trimws(strsplit(args$ranking_features, ",", fixed = TRUE)[[1]])
 ranking_features <- ranking_features[nzchar(ranking_features)]
 if (length(ranking_features) == 0) stop("--ranking_features resolved to an empty list.", call. = FALSE)
+
+# Define which columns must be present for a gene to be retained.
+# This is stricter than ranking-only completeness because it requires
+# successful processing/merging across the appended evidence tables.
+post_merge_required_cols <- unique(c(
+  "ensembl_gene_id",
+  "external_gene_name_primary",
+  "uniprot_gn_id_primary",
+  "highest_score",
+  "Prediction_Score_rf",
+  "counts",
+  ranking_features
+))
+
+split_rank_data <- flag_incomplete_rows(rank_data, post_merge_required_cols)
+rank_data_incomplete <- split_rank_data$incomplete
+rank_data <- split_rank_data$complete
+
+message(sprintf(
+  "Post-merge completeness filter removed %d row(s); %d row(s) retained.",
+  nrow(rank_data_incomplete), nrow(rank_data)
+))
 
 missing_feat <- setdiff(ranking_features, colnames(rank_data))
 if (length(missing_feat) > 0) {
@@ -321,10 +409,19 @@ rownames(rank_data) <- NULL
 # ------------------------
 # Write outputs
 # ------------------------
-out_tsv_dir <- dirname(args$out_tsv)
-out_rds_dir <- dirname(args$out_rds)
-if (!dir.exists(out_tsv_dir)) dir.create(out_tsv_dir, recursive = TRUE, showWarnings = FALSE)
-if (!dir.exists(out_rds_dir)) dir.create(out_rds_dir, recursive = TRUE, showWarnings = FALSE)
+out_dirs <- unique(dirname(c(
+  args$out_tsv,
+  args$out_rds,
+  args$out_incomplete_tsv,
+  args$out_incomplete_rds
+)))
+
+for (d in out_dirs) {
+  if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+}
 
 write.table(rank_data, file = args$out_tsv, sep = "\t", row.names = FALSE, quote = FALSE)
 saveRDS(rank_data, file = args$out_rds)
+
+write.table(rank_data_incomplete, file = args$out_incomplete_tsv, sep = "\t", row.names = FALSE, quote = FALSE)
+saveRDS(rank_data_incomplete, file = args$out_incomplete_rds)
