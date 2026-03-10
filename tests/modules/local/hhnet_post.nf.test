@@ -1,0 +1,52 @@
+// tests/modules/local/hhnet_post.nf.test
+nextflow_process {
+
+    name "Test Process HHNET_POST"
+    script "modules/local/hhnet_post.nf"
+    process "HHNET_POST"
+
+    //options "-stub-run"
+
+    test("HHNET_POST emits subnet and neighbour metrics") {
+
+        when {
+            params {
+                outdir = "${projectDir}/tests/results"
+                hhnet_min_cluster_size = 2
+                hhnet_n_clusters = 0
+                hhnet_seed = 1234
+                hhnet_node_id_type = "ensembl_gene_id"
+                hhnet_extra_colours = ""
+                hhnet_plot_max_nodes = 5000
+            }
+            process {
+                """
+                input[0] = file("${projectDir}/tests/results/hhnet/clusters_string_phys_logfc_abs.tsv")
+                input[1] = file("${projectDir}/tests/fixtures/PPI_test.csv")
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            assert process.trace.tasks().size() == 1
+
+            with(process.out.subnet_metrics) {
+                assert size() == 1
+                assert path(get(0)).getFileName().toString() == "hhnet_subnet_metrics.tsv"
+                assert path(get(0)).readLines().size() >= 2
+            }
+
+            with(process.out.neighbour_metrics) {
+                assert size() == 1
+                assert path(get(0)).getFileName().toString() == "hhnet_neighbour_metrics.tsv"
+                assert path(get(0)).readLines().size() >= 2
+            }
+
+            with(process.out.artefacts_dir) {
+                assert size() == 1
+                assert path(get(0)).exists()
+            }
+        }
+    }
+}
