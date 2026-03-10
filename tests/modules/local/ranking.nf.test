@@ -1,27 +1,27 @@
-// tests/modules/local/ranking.nf.test
 nextflow_process {
 
     name "Test Process RANKING"
     script "modules/local/ranking.nf"
     process "RANKING"
 
-    options "-stub-run"
+    //options "-stub-run"
 
     test("RANKING emits final ranked outputs") {
 
         when {
             params {
-                outdir = "tests/results"
+                outdir = "${projectDir}/tests/results"
+                gene_map = null
                 ranking_network = "neighbours"
                 ranking_features = "degree,betweenness,closeness,eigen_centrality,page_rank,highest_score"
             }
             process {
                 """
-                input[0] = file("${projectDir}/tests/fixtures/hhnet_subnet_metrics.tsv")
-                input[1] = file("${projectDir}/tests/fixtures/hhnet_neighbour_metrics.tsv")
-                input[2] = file("${projectDir}/tests/fixtures/druggability.tsv")
-                input[3] = file("${projectDir}/tests/fixtures/ml_scores.tsv")
-                input[4] = file("${projectDir}/tests/fixtures/citations.tsv")
+                input[0] = file("${projectDir}/tests/results/hhnet_processing/hhnet_subnet_metrics.tsv")
+                input[1] = file("${projectDir}/tests/results/hhnet_processing/hhnet_neighbour_metrics.tsv")
+                input[2] = file("${projectDir}/assets/druggability_scores_annot2.0.csv")
+                input[3] = file("${projectDir}/assets/ML_data.csv")
+                input[4] = file("${projectDir}/assets/PubTator3_counts.csv")
                 """
             }
         }
@@ -30,12 +30,12 @@ nextflow_process {
             assert process.success
             assert process.trace.tasks().size() == 1
 
-            assert process.out[0].size() == 1
-            assert path(process.out[0].get(0)).getFileName().toString() == "final_ranked.tsv"
-            assert path(process.out[0].get(0)).readLines().size() >= 2
+            assert process.out.ranked_tsv.size() == 1
+            assert path(process.out.ranked_tsv.get(0)).getFileName().toString() == "final_ranked.tsv"
+            assert path(process.out.ranked_tsv.get(0)).readLines().size() >= 2
 
-            assert process.out[1].size() == 1
-            assert path(process.out[1].get(0)).getFileName().toString() == "final_ranked.rds"
+            assert process.out.ranked_rds.size() == 1
+            assert path(process.out.ranked_rds.get(0)).getFileName().toString() == "final_ranked.rds"
         }
     }
 }
