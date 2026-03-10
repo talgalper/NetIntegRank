@@ -1,6 +1,7 @@
+// modules/local/hhnet_post.nf
 process HHNET_POST {
   tag "hhnet_post"
-  publishDir "${params.outdir}/hhnet_post", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}", mode: 'copy', overwrite: true
 
   input:
     path hhnet_clusters
@@ -15,7 +16,7 @@ process HHNET_POST {
     """
     mkdir -p hhnet_processing
 
-    Rscript process_hhnet_results.R \
+    Rscript ${projectDir}/bin/process_hhnet_results.R \
       --hhnet_clusters ${hhnet_clusters} \
       --ppi ${ppi_edge_list} \
       --outdir hhnet_processing \
@@ -29,5 +30,24 @@ process HHNET_POST {
 
     test -s hhnet_processing/hhnet_subnet_metrics.tsv
     test -s hhnet_processing/hhnet_neighbour_metrics.tsv
+    """
+
+  stub:
+    """
+    mkdir -p hhnet_processing
+
+    cat > hhnet_processing/hhnet_subnet_metrics.tsv <<'EOF'
+node_id	degree
+ENSG000001	5
+ENSG000002	3
+EOF
+
+    cat > hhnet_processing/hhnet_neighbour_metrics.tsv <<'EOF'
+node_id	degree
+ENSG000001	8
+ENSG000003	2
+EOF
+
+    touch hhnet_processing/id_annot_cache.tsv
     """
 }
