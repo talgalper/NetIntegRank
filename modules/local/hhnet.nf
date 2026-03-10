@@ -1,6 +1,6 @@
+// modules/local/hhnet.nf
 process HHNET {
   tag "${params.hhnet_network_name}_${params.hhnet_score_name}"
-
   publishDir "${params.outdir}/hhnet", mode: 'copy', overwrite: true
 
   input:
@@ -28,5 +28,14 @@ process HHNET {
       ${hhnetDirArg}
 
     test -s clusters_${params.hhnet_network_name}_${params.hhnet_score_name}.tsv
+    """
+
+  stub:
+    """
+    cat > clusters_${params.hhnet_network_name}_${params.hhnet_score_name}.tsv <<'EOF'
+cluster_id	node_id
+1	ENSG000001
+1	ENSG000002
+EOF
     """
 }
