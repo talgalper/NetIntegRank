@@ -4,8 +4,6 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  # HHNet upstream recommendation is Python 2.7/3.5-era packages.
-  # This environment pins to a Python 3.5-compatible stack for reproducibility.
   - python=3.5
   - numpy=1.14
   - scipy=0.19
