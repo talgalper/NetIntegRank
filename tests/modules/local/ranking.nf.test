@@ -4,7 +4,7 @@ nextflow_process {
     script "modules/local/ranking.nf"
     process "RANKING"
 
-    //options "-stub-run"
+    // options "-stub-run"
 
     test("RANKING emits final ranked outputs") {
 
@@ -14,7 +14,10 @@ nextflow_process {
                 gene_map = null
                 ranking_network = "neighbours"
                 ranking_features = "degree,betweenness,closeness,eigen_centrality,page_rank,highest_score"
-            }
+                negative_features = ""
+                ranking_step = 0.1
+                write_rds = true
+}
             process {
                 """
                 input[0] = file("${projectDir}/tests/results/hhnet_processing/hhnet_subnet_metrics.tsv")
@@ -36,6 +39,19 @@ nextflow_process {
 
             assert process.out.ranked_rds.size() == 1
             assert path(process.out.ranked_rds.get(0)).getFileName().toString() == "final_ranked.rds"
+
+            assert process.out.incomplete_tsv.size() == 1
+            assert path(process.out.incomplete_tsv.get(0)).getFileName().toString() == "final_ranked_incomplete.tsv"
+
+            assert process.out.incomplete_rds.size() == 1
+            assert path(process.out.incomplete_rds.get(0)).getFileName().toString() == "final_ranked_incomplete.rds"
+
+            assert process.out.missing_gene_name_csv.size() == 1
+            assert path(process.out.missing_gene_name_csv.get(0)).getFileName().toString() == "final_ranked_missing_external_gene_name.csv"
+
+            def missingCsvLines = path(process.out.missing_gene_name_csv.get(0)).readLines()
+            assert missingCsvLines.size() >= 1
+            assert missingCsvLines.get(0).contains("removal_reason")
         }
     }
 }
