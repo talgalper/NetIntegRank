@@ -1,1 +1,25 @@
+# macOS
 **/.DS_Store
+
+# Nextflow
+.nextflow/
+.nextflow*
+work/
+results/
+*.trace
+*.report
+*.timeline
+*.html
+*.log
+
+# nf-test
+.nf-test/
+.nf-test.log
+
+# Editor
+.vscode/
+
+# Python / R / misc
+__pycache__/
+.Rhistory
+.RData
