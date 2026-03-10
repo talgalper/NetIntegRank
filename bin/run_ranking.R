@@ -8,7 +8,7 @@ option_list <- list(
   make_option("--hhnet_metrics", type = "character",
               help = "Path to HHNet-derived network metrics table (TSV/CSV)."),
   make_option("--druggability", type = "character",
-              help = "Path to druggability table (TSV/CSV). Required columns: uniprot_gn_id, highest_score."),
+              help = "Path to druggability table (TSV/CSV). Required columns: external_gene_name, highest_score."),
   make_option("--ml_scores", type = "character",
               help = "Path to ML scores table (TSV/CSV). Required columns: Protein, Prediction_Score_rf."),
   make_option("--citations", type = "character",
@@ -33,7 +33,9 @@ option_list <- list(
   make_option("--out_incomplete_rds", type = "character", default = NULL,
               help = "Optional output RDS path for rows removed before ranking."),
   make_option("--out_missing_gene_name_csv", type = "character", default = NULL,
-              help = "Optional output CSV path for hhnet_metrics rows missing external_gene_name.")
+              help = "Optional output CSV path for hhnet_metrics rows missing external_gene_name."),
+  make_option("--write_rds", type = "character", default = "TRUE",
+              help = "Whether to write RDS outputs for ranked and incomplete tables. TRUE or FALSE. Default: TRUE")
 )
 
 parser <- OptionParser(option_list = option_list)
@@ -46,6 +48,17 @@ if (length(missing_args) > 0) {
                paste(sprintf("--%s", missing_args), collapse = ", ")),
        call. = FALSE)
 }
+
+parse_bool <- function(x, arg_name) {
+  if (is.logical(x) && length(x) == 1) return(x)
+  x <- toupper(trimws(as.character(x)))
+  if (x %in% c("TRUE", "T", "1", "YES", "Y")) return(TRUE)
+  if (x %in% c("FALSE", "F", "0", "NO", "N")) return(FALSE)
+  stop(sprintf("Invalid value for %s: %s. Use TRUE or FALSE.", arg_name, as.character(x)),
+       call. = FALSE)
+}
+
+write_rds <- parse_bool(args$write_rds, "--write_rds")
 
 read_table_auto <- function(path) {
   if (!file.exists(path)) {
@@ -184,8 +197,9 @@ upsert_annotation_cache <- function(cache_path, input_type, annotation_df) {
 
   if (file.exists(cache_path)) {
     existing <- read_table_auto(cache_path)
-    require_columns(existing, cache_cols, "id_annot_cache", cache_path)
-    cache_df <- rbind(existing[, cache_cols, drop = FALSE], cache_df)
+    if (all(cache_cols %in% colnames(existing))) {
+      cache_df <- rbind(existing[, cache_cols, drop = FALSE], cache_df)
+    }
   }
 
   cache_df <- cache_df[!duplicated(cache_df[[input_type]]), , drop = FALSE]
@@ -199,7 +213,7 @@ upsert_annotation_cache <- function(cache_path, input_type, annotation_df) {
   cache_df
 }
 
-id_annot <- function(data, input_type = "ensembl_gene_id", cache_path = NULL) {
+id_annot <- function(data, input_type = "external_gene_name", cache_path = NULL) {
   if (!input_type %in% colnames(data)) {
     stop(sprintf("id_annot input column '%s' not found in data.", input_type), call. = FALSE)
   }
@@ -209,10 +223,12 @@ id_annot <- function(data, input_type = "ensembl_gene_id", cache_path = NULL) {
 
   cached <- NULL
   if (!is.null(cache_path) && nzchar(cache_path) && file.exists(cache_path)) {
-    cached <- read_table_auto(cache_path)
-    require_columns(cached, c(input_type, "uniprot_gn_id"), "id_annot_cache", cache_path)
-    cached <- cached[, c(input_type, "uniprot_gn_id"), drop = FALSE]
-    cached <- cached[!duplicated(cached[[input_type]]), , drop = FALSE]
+    existing <- read_table_auto(cache_path)
+    cache_cols <- c(input_type, "uniprot_gn_id")
+    if (all(cache_cols %in% colnames(existing))) {
+      cached <- existing[, cache_cols, drop = FALSE]
+      cached <- cached[!duplicated(cached[[input_type]]), , drop = FALSE]
+    }
   }
 
   missing_keys <- keys
@@ -351,7 +367,7 @@ ml_scores     <- read_table_auto(args$ml_scores)
 citations     <- read_table_auto(args$citations)
 
 require_columns(hhnet_metrics, c("ensembl_gene_id", "external_gene_name"), "hhnet_metrics", args$hhnet_metrics)
-require_columns(druggability, c("uniprot_gn_id", "highest_score"), "druggability", args$druggability)
+require_columns(druggability, c("external_gene_name", "highest_score"), "druggability", args$druggability)
 require_columns(ml_scores, c("Protein", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_columns(citations, c("symbol", "counts"), "citations", args$citations)
 
@@ -370,12 +386,12 @@ require_numeric(citations, c("counts"), "citations", args$citations)
 
 hhnet_metrics <- normalize_id_column(hhnet_metrics, "ensembl_gene_id")
 hhnet_metrics <- normalize_id_column(hhnet_metrics, "external_gene_name")
-druggability  <- normalize_id_column(druggability, "uniprot_gn_id")
+druggability  <- normalize_id_column(druggability, "external_gene_name")
 ml_scores     <- normalize_id_column(ml_scores, "Protein")
 citations     <- normalize_id_column(citations, "symbol")
 
 require_non_missing(hhnet_metrics, c("ensembl_gene_id"), "hhnet_metrics", args$hhnet_metrics)
-require_non_missing(druggability, c("uniprot_gn_id", "highest_score"), "druggability", args$druggability)
+require_non_missing(druggability, c("highest_score"), "druggability", args$druggability)
 require_non_missing(ml_scores, c("Protein", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_non_missing(citations, c("symbol", "counts"), "citations", args$citations)
 
@@ -420,32 +436,7 @@ message(sprintf(
 
 rank_data <- unique(hhnet_metrics)
 
-if (!is.null(args$gene_map) && nzchar(args$gene_map)) {
-  gene_map <- read_table_auto(args$gene_map)
-  require_columns(gene_map, c("ensembl_gene_id", "uniprot_gn_id"), "gene_map", args$gene_map)
-
-  gene_map <- normalize_id_column(gene_map, "ensembl_gene_id")
-  gene_map <- normalize_id_column(gene_map, "uniprot_gn_id")
-  require_non_missing(gene_map, c("ensembl_gene_id", "uniprot_gn_id"), "gene_map", args$gene_map)
-
-  gene_map <- stats::aggregate(gene_map$uniprot_gn_id,
-                               by = list(gene_map$ensembl_gene_id),
-                               FUN = collapse_unique)
-  colnames(gene_map) <- c("ensembl_gene_id", "uniprot_gn_id")
-
-  rank_data <- left_join_first(rank_data, gene_map,
-                               by_x = "ensembl_gene_id", by_y = "ensembl_gene_id",
-                               cols_y = "uniprot_gn_id")
-} else {
-  rank_data <- id_annot(rank_data, input_type = "ensembl_gene_id", cache_path = id_annot_cache_path)
-}
-
-rank_data$join_uniprot_gn_id <- first_id(rank_data$uniprot_gn_id)
-
-druggability <- keep_max_by_key(druggability[, c("uniprot_gn_id", "highest_score"), drop = FALSE],
-                                key_col = "uniprot_gn_id", value_col = "highest_score")
-ml_scores <- keep_max_by_key(ml_scores[, c("Protein", "Prediction_Score_rf"), drop = FALSE],
-                             key_col = "Protein", value_col = "Prediction_Score_rf")
+# merge citations by external_gene_name
 citations <- stats::aggregate(citations$counts,
                               by = list(citations$symbol),
                               FUN = function(x) sum(as.numeric(x), na.rm = TRUE))
@@ -454,15 +445,17 @@ colnames(citations) <- c("external_gene_name", "counts")
 rank_data <- left_join_first(rank_data, citations,
                              by_x = "external_gene_name", by_y = "external_gene_name",
                              cols_y = "counts")
-rank_data <- left_join_first(rank_data, druggability,
-                             by_x = "join_uniprot_gn_id", by_y = "uniprot_gn_id",
-                             cols_y = "highest_score")
 
-if ("Prediction_Score_rf" %in% ranking_features) {
-  rank_data <- left_join_first(rank_data, ml_scores,
-                               by_x = "join_uniprot_gn_id", by_y = "Protein",
-                               cols_y = "Prediction_Score_rf")
-}
+# merge druggability by external_gene_name
+druggability <- keep_max_by_key(
+  druggability[, c("external_gene_name", "highest_score"), drop = FALSE],
+  key_col = "external_gene_name",
+  value_col = "highest_score"
+)
+
+rank_data <- left_join_first(rank_data, druggability,
+                             by_x = "external_gene_name", by_y = "external_gene_name",
+                             cols_y = "highest_score")
 
 rank_data$counts_norm <- log10(pmax(rank_data$counts, 1))
 
@@ -482,8 +475,6 @@ if (length(non_numeric) > 0) {
 required_for_ranking <- unique(c(
   "ensembl_gene_id",
   "external_gene_name",
-  "uniprot_gn_id",
-  "counts",
   "highest_score",
   ranking_features
 ))
@@ -511,12 +502,42 @@ RS_data <- avg_rank_sensitivity(rank_input,
                                 negative_features = negative_features,
                                 step = args$step)
 
-append_cols <- rank_data_complete[, c("ensembl_gene_id", "uniprot_gn_id", "join_uniprot_gn_id", "counts"), drop = FALSE]
+append_cols <- rank_data_complete[, c("ensembl_gene_id", "counts"), drop = FALSE]
 append_cols <- append_cols[!duplicated(append_cols$ensembl_gene_id), , drop = FALSE]
 
 RS_data <- left_join_first(RS_data, append_cols,
                            by_x = "ensembl_gene_id", by_y = "ensembl_gene_id",
-                           cols_y = c("uniprot_gn_id", "join_uniprot_gn_id", "counts"))
+                           cols_y = "counts")
+
+# add uniprot only after ranking
+if (!is.null(args$gene_map) && nzchar(args$gene_map)) {
+  gene_map <- read_table_auto(args$gene_map)
+  require_columns(gene_map, c("ensembl_gene_id", "uniprot_gn_id"), "gene_map", args$gene_map)
+
+  gene_map <- normalize_id_column(gene_map, "ensembl_gene_id")
+  gene_map <- normalize_id_column(gene_map, "uniprot_gn_id")
+  require_non_missing(gene_map, c("ensembl_gene_id", "uniprot_gn_id"), "gene_map", args$gene_map)
+
+  gene_map <- stats::aggregate(gene_map$uniprot_gn_id,
+                               by = list(gene_map$ensembl_gene_id),
+                               FUN = collapse_unique)
+  colnames(gene_map) <- c("ensembl_gene_id", "uniprot_gn_id")
+
+  RS_data <- left_join_first(RS_data, gene_map,
+                             by_x = "ensembl_gene_id", by_y = "ensembl_gene_id",
+                             cols_y = "uniprot_gn_id")
+} else {
+  RS_data <- id_annot(RS_data, input_type = "external_gene_name", cache_path = id_annot_cache_path)
+}
+
+RS_data$join_uniprot_gn_id <- first_id(RS_data$uniprot_gn_id)
+
+ml_scores <- keep_max_by_key(
+  ml_scores[, c("Protein", "Prediction_Score_rf"), drop = FALSE],
+  key_col = "Protein",
+  value_col = "Prediction_Score_rf"
+)
+
 RS_data <- left_join_first(RS_data, ml_scores,
                            by_x = "join_uniprot_gn_id", by_y = "Protein",
                            cols_y = "Prediction_Score_rf")
@@ -539,10 +560,16 @@ for (d in out_dirs) {
 }
 
 write.table(RS_data, file = args$out_tsv, sep = "\t", row.names = FALSE, quote = FALSE)
-saveRDS(RS_data, file = args$out_rds)
+
+if (write_rds) {
+  saveRDS(RS_data, file = args$out_rds)
+}
 
 write.table(rank_data_incomplete, file = args$out_incomplete_tsv, sep = "\t", row.names = FALSE, quote = FALSE)
-saveRDS(rank_data_incomplete, file = args$out_incomplete_rds)
+
+if (write_rds) {
+  saveRDS(rank_data_incomplete, file = args$out_incomplete_rds)
+}
 
 write.csv(missing_gene_name_rows,
           file = args$out_missing_gene_name_csv,
