@@ -1,0 +1,41 @@
+// tests/modules/local/hhnet.nf.test
+nextflow_process {
+
+    name "Test Process HHNET"
+    script "modules/local/hhnet.nf"
+    process "HHNET"
+
+    //options "-stub-run"
+
+    test("HHNET emits a clusters TSV") {
+
+        when {
+            params {
+                outdir = "${projectDir}/tests/results"
+                hhnet_network_name = "string_phys"
+                hhnet_score_name = "logfc_abs"
+                hhnet_num_permutations = 10
+                hhnet_compile_fortran = "never"
+                hhnet_num_cores = 4
+                hhnet_run_id = "test"
+            }
+            process {
+                """
+                input[0] = file("${projectDir}/tests/fixtures/DE_test.csv")
+                input[1] = file("${projectDir}/tests/fixtures/PPI_test.csv")
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            assert process.trace.tasks().size() == 1
+
+            with(process.out.clusters) {
+                assert size() == 1
+                assert path(get(0)).getFileName().toString() == "clusters_string_phys_logfc_abs.tsv"
+                assert path(get(0)).readLines().size() >= 2
+            }
+        }
+    }
+}
