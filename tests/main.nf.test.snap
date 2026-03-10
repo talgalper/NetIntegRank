@@ -1,0 +1,15 @@
+{
+    "core_outputs": {
+        "content": [
+            "clusters_string_phys_logfc_abs.tsv:md5,4f3e79d99933f409211574951aa557ba",
+            "hhnet_subnet_metrics.tsv:md5,1be7bd638e508e8cfb4fc0c0351e0ed6",
+            "hhnet_neighbour_metrics.tsv:md5,8e7dbd1fa4a8f0a48753b66b2362c100",
+            "final_ranked.tsv:md5,622b7a9424bb3f186aa831fe562870ef"
+        ],
+        "timestamp": "2026-03-10T16:22:01.241834",
+        "meta": {
+            "nf-test": "0.9.4",
+            "nextflow": "25.10.4"
+        }
+    }
+}
