@@ -19,23 +19,22 @@ process RANKING {
     def useNeighbour = (params.ranking_network ?: "neighbours") == "neighbours"
     def hhnet_metrics = useNeighbour ? neighbour_metrics : subnet_metrics
 
-    def geneMapPath = params.gene_map ? file(params.gene_map).toString() : null
-    def geneMapArg  = geneMapPath ? "--gene_map '${geneMapPath}'" : ""
-
-    def featArg = params.ranking_features
-      ? "--ranking_features '${params.ranking_features}'"
+    def geneMapArg = (params.gene_map && params.gene_map.toString().trim()) \
+      ? "--gene_map '${params.gene_map}'" \
       : ""
 
-    def cachePath = params.id_annot_cache
-      ? file(params.id_annot_cache).toString()
-      : file("${params.outdir}/ranking/id_annot_cache.tsv").toString()
+    def featArg = (params.ranking_features && params.ranking_features.toString().trim()) \
+      ? "--ranking_features '${params.ranking_features}'" \
+      : ""
 
-    def cacheDir = new File(cachePath).getParent()
+    def cachePath = (params.id_annot_cache && params.id_annot_cache.toString().trim()) \
+      ? params.id_annot_cache.toString() \
+      : "${params.outdir}/ranking/id_annot_cache.tsv"
 
     """
-    mkdir -p '${cacheDir}'
+    mkdir -p "\$(dirname '${cachePath}')"
 
-    Rscript run_ranking.R \
+    Rscript ${projectDir}/bin/run_ranking.R \
       --hhnet_metrics ${hhnet_metrics} \
       --druggability ${druggability} \
       --ml_scores ${ml_scores} \
@@ -56,9 +55,9 @@ process RANKING {
   stub:
     """
     cat > final_ranked.tsv <<'EOF'
-gene_symbol\tfinal_score
-GENE1\t0.91
-GENE2\t0.73
+gene_symbol	final_score
+GENE1	0.91
+GENE2	0.73
 EOF
 
     touch final_ranked.rds
