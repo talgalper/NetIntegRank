@@ -171,12 +171,12 @@ index_out = pathlib.Path(sys.argv[3])
 genes_out = pathlib.Path(sys.argv[4])
 
 if not in_path.exists():
-    print(f"ERROR: PPI file not found: {in_path}", file=sys.stderr)
+    print("ERROR: PPI file not found: {}".format(in_path), file=sys.stderr)
     sys.exit(2)
 
 text = in_path.read_text(errors="replace")
 if not text.strip():
-    print(f"ERROR: PPI file is empty: {in_path}", file=sys.stderr)
+    print("ERROR: PPI file is empty: {}".format(in_path), file=sys.stderr)
     sys.exit(2)
 
 sample = text[:4096]
@@ -217,7 +217,6 @@ for row in rows:
     if row[0].lstrip().startswith("#"):
         continue
 
-    # header skip: only for the first real line
     if total_rows == 0 and looks_like_header(row):
         header_skipped = True
         total_rows += 1
@@ -244,7 +243,6 @@ for row in rows:
 
     directed_seen.add((a, b))
 
-    # undirected canonicalisation (AB == BA)
     x, y = (a, b) if a <= b else (b, a)
     key = (x, y)
     if key in undirected_seen:
@@ -265,10 +263,8 @@ edge_out.parent.mkdir(parents=True, exist_ok=True)
 index_out.parent.mkdir(parents=True, exist_ok=True)
 genes_out.parent.mkdir(parents=True, exist_ok=True)
 
-# deterministic index: alphabetical order, 1..N
 gene_to_idx = {g: i+1 for i, g in enumerate(genes)}
 
-# IMPORTANT FORMAT: index -> gene (col1=index, col2=gene)
 with index_out.open("w", newline="") as f:
     w = csv.writer(f, delimiter="\t", lineterminator="\n")
     for g in genes:
@@ -278,7 +274,6 @@ with genes_out.open("w") as f:
     for g in genes:
         f.write(g + "\n")
 
-# Indexed edge list, undirected, written as i<=j
 with edge_out.open("w", newline="") as f:
     w = csv.writer(f, delimiter="\t", lineterminator="\n")
     for a, b in unique_edges:
@@ -289,21 +284,20 @@ with edge_out.open("w", newline="") as f:
         else:
             w.writerow((ib, ia))
 
-# User-facing messages (requested)
 if header_skipped:
     print("PPI: detected a header row; it was skipped.")
 if extra_col_rows > 0:
-    print(f"PPI: detected {extra_col_rows} row(s) with extra columns (e.g. interaction scores). Extra columns will be removed (keeping columns 1-2).")
+    print("PPI: detected {} row(s) with extra columns (e.g. interaction scores). Extra columns will be removed (keeping columns 1-2).".format(extra_col_rows))
 if reverse_dup_rows > 0:
-    print(f"PPI: detected {reverse_dup_rows} reverse-duplicate edge row(s) (A B and B A). Reverse duplicates will be removed (keeping one per undirected pair).")
+    print("PPI: detected {} reverse-duplicate edge row(s) (A B and B A). Reverse duplicates will be removed (keeping one per undirected pair).".format(reverse_dup_rows))
 if directed_dup_rows > 0:
-    print(f"PPI: detected {directed_dup_rows} exact duplicate directed edge row(s); duplicates will be removed.")
+    print("PPI: detected {} exact duplicate directed edge row(s); duplicates will be removed.".format(directed_dup_rows))
 if undirected_dup_rows > 0:
-    print(f"PPI: removed {undirected_dup_rows} duplicate undirected edge row(s) in total (includes reverse and exact duplicates).")
+    print("PPI: removed {} duplicate undirected edge row(s) in total (includes reverse and exact duplicates).".format(undirected_dup_rows))
 if self_loop_rows > 0:
-    print(f"PPI: detected {self_loop_rows} self-loop row(s) (A A); these were removed.")
+    print("PPI: detected {} self-loop row(s) (A A); these were removed.".format(self_loop_rows))
 
-print(f"PPI: kept {kept_rows} unique undirected edges across {len(genes)} genes.")
+print("PPI: kept {} unique undirected edges across {} genes.".format(kept_rows, len(genes)))
 PY
 }
 
@@ -322,10 +316,10 @@ genes_file = pathlib.Path(sys.argv[2])
 out_path = pathlib.Path(sys.argv[3])
 
 if not de_path.exists():
-    print(f"ERROR: DE file not found: {de_path}", file=sys.stderr)
+    print("ERROR: DE file not found: {}".format(de_path), file=sys.stderr)
     sys.exit(2)
 if not genes_file.exists():
-    print(f"ERROR: genes_in_ppi file not found: {genes_file}", file=sys.stderr)
+    print("ERROR: genes_in_ppi file not found: {}".format(genes_file), file=sys.stderr)
     sys.exit(2)
 
 genes_in_ppi = set(g.strip() for g in genes_file.read_text().splitlines() if g.strip())
@@ -335,7 +329,7 @@ if not genes_in_ppi:
 
 text = de_path.read_text(errors="replace")
 if not text.strip():
-    print(f"ERROR: DE file is empty: {de_path}", file=sys.stderr)
+    print("ERROR: DE file is empty: {}".format(de_path), file=sys.stderr)
     sys.exit(2)
 
 sample = text[:4096]
@@ -346,7 +340,7 @@ except csv.Error:
 
 rows = csv.reader(text.splitlines(), dialect)
 
-def is_number(x: str) -> bool:
+def is_number(x):
     try:
         float(x)
         return True
@@ -397,21 +391,21 @@ with out_path.open("w", newline="") as f:
             dropped_not_in_ppi += 1
             continue
 
-        w.writerow((gid, f"{abs(float(val))}"))
+        w.writerow((gid, "{0}".format(abs(float(val)))))
         kept += 1
 
 if header_skipped:
     print("DE: detected a header row; it was skipped.")
 if dropped_not_in_ppi > 0:
-    print(f"DE: dropped {dropped_not_in_ppi} row(s) because gene_id was not present in the PPI-derived index.")
+    print("DE: dropped {} row(s) because gene_id was not present in the PPI-derived index.".format(dropped_not_in_ppi))
 if invalid > 0:
-    print(f"DE: skipped {invalid} invalid row(s) (missing columns or non-numeric score).")
+    print("DE: skipped {} invalid row(s) (missing columns or non-numeric score).".format(invalid))
 
 if kept == 0:
     print("ERROR: After filtering to PPI genes, 0 DE rows remained. Check gene_id naming consistency between DE and PPI.", file=sys.stderr)
     sys.exit(2)
 
-print(f"DE: kept {kept} row(s) after abs(score) + filtering to PPI genes.")
+print("DE: kept {} row(s) after abs(score) + filtering to PPI genes.".format(kept))
 PY
 }
 
@@ -504,10 +498,17 @@ normalize_de_abs_filter_to_ppi "$DE" "$GENES_FILE" "$SCORES0_FILE"
 pushd "$HHNET_DIR" >/dev/null
 
 if [[ "$COMPILE_FORTRAN" != "never" ]]; then
-  if [[ "$COMPILE_FORTRAN" == "always" ]] || [[ ! -f "src/fortran_module"*.so ]]; then
+  if [[ "$COMPILE_FORTRAN" == "always" ]] || ! compgen -G "src/fortran_module*.so" > /dev/null; then
     if command -v f2py >/dev/null 2>&1; then
       echo "Compiling Fortran module..."
-      (cd src && f2py -c fortran_module.f95 -m fortran_module > /dev/null)
+      if ! (cd src && f2py -c fortran_module.f95 -m fortran_module > /dev/null); then
+        if [[ "$COMPILE_FORTRAN" == "always" ]]; then
+          echo "ERROR: Fortran compilation failed and --compile_fortran=always was requested." >&2
+          exit 2
+        else
+          echo "WARN: Fortran compilation failed; continuing with Python fallback." >&2
+        fi
+      fi
     elif [[ "$COMPILE_FORTRAN" == "always" ]]; then
       echo "ERROR: --compile_fortran always requested, but f2py is not available" >&2
       exit 2
