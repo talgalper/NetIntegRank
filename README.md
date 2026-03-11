@@ -146,6 +146,7 @@ chmod +x bin/run_hhnet.sh
 
 ## Running the pipeline
 
+
 ### Basic example
 
 ```bash
@@ -236,6 +237,7 @@ The HHNet wrapper is expected to:
 * generate internal indexed network files for HHNet
 
 > **Similarity matrix caching**
+
 > HHNet can construct a `similarity_matrix.h5` file from the processed PPI network. For large networks this can take substantial time. To reduce repeat work, the wrapper caches the similarity matrix and associated `beta.txt` using the processed/canonicalised PPI network as the cache key. Reusing the same network should therefore speed up later runs.
 
 ---
