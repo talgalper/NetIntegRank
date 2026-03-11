@@ -6,20 +6,19 @@ include { RANKING }    from './modules/local/ranking'
 
 workflow {
 
-  if( !params.de_results )   error "Missing required --de_results"
-  if( !params.ppi_network )  error "Missing required --ppi_network"
-  if( !params.druggability ) error "Missing required --druggability"
-  if( !params.ml_scores )    error "Missing required --ml_scores"
-  if( !params.citations )    error "Missing required --citations"
+  if( !params.scores )        error "Missing required --scores"
+  if( !params.ppi_network )   error "Missing required --ppi_network"
+  if( !params.druggability )  error "Missing required --druggability"
+  if( !params.ml_scores )     error "Missing required --ml_scores"
+  if( !params.citations )     error "Missing required --citations"
 
-  def de_ch   = Channel.fromPath(params.de_results,     checkIfExists: true)
-  def ppi_ch  = Channel.fromPath(params.ppi_network,    checkIfExists: true)
-  def drug_ch = Channel.fromPath(params.druggability,   checkIfExists: true)
-  def ml_ch   = Channel.fromPath(params.ml_scores,      checkIfExists: true)
-  def cit_ch  = Channel.fromPath(params.citations,      checkIfExists: true)
+  def scores_ch = Channel.fromPath(params.scores, checkIfExists: true)
+  def ppi_ch    = Channel.fromPath(params.ppi_network, checkIfExists: true)
+  def drug_ch   = Channel.fromPath(params.druggability, checkIfExists: true)
+  def ml_ch     = Channel.fromPath(params.ml_scores, checkIfExists: true)
+  def cit_ch    = Channel.fromPath(params.citations, checkIfExists: true)
 
-  // 1) HHNet
-  def hhnet_out = HHNET(de_ch, ppi_ch)
+  def hhnet_out = HHNET(scores_ch, ppi_ch)
 
   // 2) Post-process HHNet clusters into networks + metrics
   def post_out = HHNET_POST(hhnet_out.clusters, ppi_ch)
