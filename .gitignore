@@ -1,5 +1,6 @@
 # macOS
 **/.DS_Store
+modules/.DS_Store
 
 # Nextflow
 .nextflow/
