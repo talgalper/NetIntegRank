@@ -4,7 +4,7 @@ process HHNET {
   publishDir "${params.outdir}/hhnet", mode: 'copy', overwrite: true
 
   input:
-    path de_scores
+    path scores
     path ppi_edge_list
 
   output:
@@ -16,7 +16,7 @@ process HHNET {
 
     """
     run_hhnet.sh \
-      --de ${de_scores} \
+      --scores ${scores} \
       --ppi ${ppi_edge_list} \
       --outdir . \
       ${runIdArg} \
