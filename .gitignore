@@ -14,7 +14,7 @@ results/
 
 # nf-test
 .nf-test/
-.nf-test.log
+*.log
 
 # Editor
 .vscode/
