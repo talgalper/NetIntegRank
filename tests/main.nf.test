@@ -31,7 +31,7 @@ nextflow_pipeline {
                 hhnet_plot_max_nodes = 5000
 
                 ranking_network = "neighbours"
-                ranking_features = "degree,betweenness,closeness,eigen_centrality,page_rank,highest_score"
+                ranking_features = "degree,betweenness,closeness,eigen_centrality,page_rank,drug_score"
                 negative_features = ""
                 ranking_step = 0.1
                 write_rds = true
@@ -75,7 +75,7 @@ nextflow_pipeline {
                 hhnet_plot_max_nodes = 5000
 
                 ranking_network = "neighbours"
-                ranking_features = "degree,betweenness,closeness,eigen_centrality,page_rank,highest_score"
+                ranking_features = "degree,betweenness,closeness,eigen_centrality,page_rank,drug_score"
                 negative_features = ""
                 ranking_step = 0.1
                 write_rds = true

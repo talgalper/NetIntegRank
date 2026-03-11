@@ -89,7 +89,7 @@ EOF
 
     cat > final_ranked_incomplete.tsv <<'EOF'
 ensembl_gene_id	external_gene_name	missing_fields
-ENSG000003	GENE3	highest_score
+ENSG000003	GENE3	drug_score
 EOF
 
     cat > final_ranked_missing_external_gene_name.csv <<'EOF'

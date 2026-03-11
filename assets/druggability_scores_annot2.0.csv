@@ -1,4 +1,4 @@
-"uniprot_gn_id","external_gene_name","description","gene_biotype","druggability","struct_score","Fpocket_method","CP_score","PocketMiner_method","highest_score","source"
+"uniprot_gn_id","external_gene_name","description","gene_biotype","FP_score","struct_score","Fpocket_method","CP_score","PocketMiner_method","drug_score","source"
 "A0A024RBG1","NUDT4B","nudix hydrolase 4B ","protein_coding",0.973,85.1845929018789,"AF",0.933519047619048,"AF",0.973,"AF"
 "A0A075B6I1","IGLV4-60","immunoglobulin lambda variable 4-60 ","IG_V_gene",0.452,89.4188170865279,"AF",0.947421052631579,"AF",0.947421052631579,"AF"
 "A0A075B6N2","TRBV20-1","T cell receptor beta variable 20-1 ","TR_V_gene",0.391,93.1894131455399,"AF",0.986266666666667,"AF",0.986266666666667,"AF"

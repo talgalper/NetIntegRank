@@ -8,7 +8,7 @@ option_list <- list(
   make_option("--hhnet_metrics", type = "character",
               help = "Path to HHNet-derived network metrics table (TSV/CSV)."),
   make_option("--druggability", type = "character",
-              help = "Path to druggability table (TSV/CSV). Required columns: external_gene_name, highest_score."),
+              help = "Path to druggability table (TSV/CSV). Required columns: external_gene_name, drug_score."),
   make_option("--ml_scores", type = "character",
               help = "Path to ML scores table (TSV/CSV). Required columns: Protein, Prediction_Score_rf."),
   make_option("--citations", type = "character",
@@ -16,7 +16,7 @@ option_list <- list(
   make_option("--gene_map", type = "character", default = NULL,
               help = "Optional mapping table (TSV/CSV). Required columns: ensembl_gene_id, uniprot_gn_id."),
   make_option("--ranking_features", type = "character",
-              default = "degree,betweenness,closeness,eigen_centrality,page_rank,highest_score",
+              default = "degree,betweenness,closeness,eigen_centrality,page_rank,drug_score",
               help = "Comma-separated feature columns to use in the sensitivity ranking."),
   make_option("--negative_features", type = "character", default = "",
               help = "Optional comma-separated ranking features to subtract rather than add."),
@@ -93,7 +93,7 @@ require_numeric <- function(df, cols, table_label, table_path) {
   }
 }
 
-normalize_id_column <- function(df, colname) {
+normalise_id_column <- function(df, colname) {
   if (!colname %in% colnames(df)) return(df)
   df[[colname]] <- trimws(as.character(df[[colname]]))
   df[[colname]][df[[colname]] == ""] <- NA_character_
@@ -367,11 +367,11 @@ ml_scores     <- read_table_auto(args$ml_scores)
 citations     <- read_table_auto(args$citations)
 
 require_columns(hhnet_metrics, c("ensembl_gene_id", "external_gene_name"), "hhnet_metrics", args$hhnet_metrics)
-require_columns(druggability, c("external_gene_name", "highest_score"), "druggability", args$druggability)
+require_columns(druggability, c("external_gene_name", "drug_score"), "druggability", args$druggability)
 require_columns(ml_scores, c("Protein", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_columns(citations, c("symbol", "counts"), "citations", args$citations)
 
-required_feature_sources <- setdiff(ranking_features, c("highest_score", "counts_norm", "counts", "Prediction_Score_rf"))
+required_feature_sources <- setdiff(ranking_features, c("drug_score", "counts_norm", "counts", "Prediction_Score_rf"))
 missing_hh_features <- setdiff(required_feature_sources, colnames(hhnet_metrics))
 if (length(missing_hh_features) > 0) {
   stop(sprintf("Ranking feature(s) not found in hhnet_metrics: %s",
@@ -380,18 +380,18 @@ if (length(missing_hh_features) > 0) {
 }
 
 require_numeric(hhnet_metrics, intersect(required_feature_sources, colnames(hhnet_metrics)), "hhnet_metrics", args$hhnet_metrics)
-require_numeric(druggability, c("highest_score"), "druggability", args$druggability)
+require_numeric(druggability, c("drug_score"), "druggability", args$druggability)
 require_numeric(ml_scores, c("Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_numeric(citations, c("counts"), "citations", args$citations)
 
-hhnet_metrics <- normalize_id_column(hhnet_metrics, "ensembl_gene_id")
-hhnet_metrics <- normalize_id_column(hhnet_metrics, "external_gene_name")
-druggability  <- normalize_id_column(druggability, "external_gene_name")
-ml_scores     <- normalize_id_column(ml_scores, "Protein")
-citations     <- normalize_id_column(citations, "symbol")
+hhnet_metrics <- normalise_id_column(hhnet_metrics, "ensembl_gene_id")
+hhnet_metrics <- normalise_id_column(hhnet_metrics, "external_gene_name")
+druggability  <- normalise_id_column(druggability, "external_gene_name")
+ml_scores     <- normalise_id_column(ml_scores, "Protein")
+citations     <- normalise_id_column(citations, "symbol")
 
 require_non_missing(hhnet_metrics, c("ensembl_gene_id"), "hhnet_metrics", args$hhnet_metrics)
-require_non_missing(druggability, c("highest_score"), "druggability", args$druggability)
+require_non_missing(druggability, c("drug_score"), "druggability", args$druggability)
 require_non_missing(ml_scores, c("Protein", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_non_missing(citations, c("symbol", "counts"), "citations", args$citations)
 
@@ -448,14 +448,14 @@ rank_data <- left_join_first(rank_data, citations,
 
 # merge druggability by external_gene_name
 druggability <- keep_max_by_key(
-  druggability[, c("external_gene_name", "highest_score"), drop = FALSE],
+  druggability[, c("external_gene_name", "drug_score"), drop = FALSE],
   key_col = "external_gene_name",
-  value_col = "highest_score"
+  value_col = "drug_score"
 )
 
 rank_data <- left_join_first(rank_data, druggability,
                              by_x = "external_gene_name", by_y = "external_gene_name",
-                             cols_y = "highest_score")
+                             cols_y = "drug_score")
 
 rank_data$counts_norm <- log10(pmax(rank_data$counts, 1))
 
@@ -475,7 +475,7 @@ if (length(non_numeric) > 0) {
 required_for_ranking <- unique(c(
   "ensembl_gene_id",
   "external_gene_name",
-  "highest_score",
+  "drug_score",
   ranking_features
 ))
 
@@ -514,8 +514,8 @@ if (!is.null(args$gene_map) && nzchar(args$gene_map)) {
   gene_map <- read_table_auto(args$gene_map)
   require_columns(gene_map, c("ensembl_gene_id", "uniprot_gn_id"), "gene_map", args$gene_map)
 
-  gene_map <- normalize_id_column(gene_map, "ensembl_gene_id")
-  gene_map <- normalize_id_column(gene_map, "uniprot_gn_id")
+  gene_map <- normalise_id_column(gene_map, "ensembl_gene_id")
+  gene_map <- normalise_id_column(gene_map, "uniprot_gn_id")
   require_non_missing(gene_map, c("ensembl_gene_id", "uniprot_gn_id"), "gene_map", args$gene_map)
 
   gene_map <- stats::aggregate(gene_map$uniprot_gn_id,
