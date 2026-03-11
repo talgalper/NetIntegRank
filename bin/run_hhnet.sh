@@ -4,10 +4,10 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  run_hhnet.sh --de <de_scores.tsv> --ppi <ppi_edge_list.tsv> [options]
+  run_hhnet.sh --scores <scores.tsv> --ppi <ppi_edge_list.tsv> [options]
 
 Required:
-  --de                Two columns: gene_id, score (score converted to abs()).
+  --scores            Two columns: gene_id, score.
   --ppi               Edge list with gene names in columns 1-2.
                       Optional 3rd+ columns allowed (e.g. interaction score) and will be removed.
 
@@ -44,7 +44,7 @@ USAGE
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-DE=""
+SCORES=""
 PPI=""
 OUTDIR="."
 RUN_ID=""
@@ -62,7 +62,7 @@ HHNET_DIR="$HHNET_DIR_DEFAULT_UNDERSCORE"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --de) DE="$2"; shift 2 ;;
+      --scores) SCORES="$2"; shift 2 ;;
     --ppi) PPI="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
     --run_id) RUN_ID="$2"; shift 2 ;;
@@ -77,7 +77,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$DE" ]] || { echo "ERROR: --de is required" >&2; exit 2; }
+[[ -n "$SCORES" ]] || { echo "ERROR: --scores is required" >&2; exit 2; }
 [[ -n "$PPI" ]] || { echo "ERROR: --ppi is required" >&2; exit 2; }
 [[ "$COMPILE_FORTRAN" =~ ^(auto|always|never)$ ]] || { echo "ERROR: --compile_fortran must be one of auto|always|never" >&2; exit 2; }
 
@@ -149,7 +149,7 @@ mkdir -p "$OUTDIR"
 EDGE_LIST_FILE="${DATA_DIR}/edge_list.tsv"      # indexed
 INDEX_GENE_FILE="${DATA_DIR}/index_gene.tsv"    # index -> gene_id  (IMPORTANT)
 GENES_FILE="${DATA_DIR}/genes_in_ppi.txt"       # one gene_id per line
-SCORES0_FILE="${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv"  # gene_id, abs(score)
+SCORES0_FILE="${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_0.tsv"  # gene_id, score
 SIMILARITY_MATRIX_FILE="${INTERMEDIATE_DIR}/${NETWORK}/similarity_matrix.h5"
 BETA_FILE="${INTERMEDIATE_DIR}/${NETWORK}/beta.txt"
 SIMILARITY_CACHE_ROOT="${HHNET_DIR}/cache/similarity_matrices"
@@ -301,22 +301,22 @@ print("PPI: kept {} unique undirected edges across {} genes.".format(kept_rows, 
 PY
 }
 
-normalize_de_abs_filter_to_ppi() {
-  local de_path="$1"
+normalize_scores_filter_to_ppi() {
+  local scores_path="$1"
   local genes_file="$2"
   local out_path="$3"
 
-  python - "$de_path" "$genes_file" "$out_path" <<'PY'
+  python - "$scores_path" "$genes_file" "$out_path" <<'PY'
 import csv
 import pathlib
 import sys
 
-de_path = pathlib.Path(sys.argv[1])
+scores_path = pathlib.Path(sys.argv[1])
 genes_file = pathlib.Path(sys.argv[2])
 out_path = pathlib.Path(sys.argv[3])
 
-if not de_path.exists():
-    print("ERROR: DE file not found: {}".format(de_path), file=sys.stderr)
+if not scores_path.exists():
+    print("ERROR: score file not found: {}".format(scores_path), file=sys.stderr)
     sys.exit(2)
 if not genes_file.exists():
     print("ERROR: genes_in_ppi file not found: {}".format(genes_file), file=sys.stderr)
@@ -324,12 +324,12 @@ if not genes_file.exists():
 
 genes_in_ppi = set(g.strip() for g in genes_file.read_text().splitlines() if g.strip())
 if not genes_in_ppi:
-    print("ERROR: genes_in_ppi is empty; cannot filter DE.", file=sys.stderr)
+    print("ERROR: genes_in_ppi is empty; cannot filter score file.", file=sys.stderr)
     sys.exit(2)
 
-text = de_path.read_text(errors="replace")
+text = scores_path.read_text(errors="replace")
 if not text.strip():
-    print("ERROR: DE file is empty: {}".format(de_path), file=sys.stderr)
+    print("ERROR: score file is empty: {}".format(scores_path), file=sys.stderr)
     sys.exit(2)
 
 sample = text[:4096]
@@ -391,21 +391,21 @@ with out_path.open("w", newline="") as f:
             dropped_not_in_ppi += 1
             continue
 
-        w.writerow((gid, "{0}".format(abs(float(val)))))
+        w.writerow((gid, "{0}".format(float(val))))
         kept += 1
 
 if header_skipped:
-    print("DE: detected a header row; it was skipped.")
+    print("Scores: detected a header row; it was skipped.")
 if dropped_not_in_ppi > 0:
-    print("DE: dropped {} row(s) because gene_id was not present in the PPI-derived index.".format(dropped_not_in_ppi))
+    print("Scores: dropped {} row(s) because gene_id was not present in the PPI-derived index.".format(dropped_not_in_ppi))
 if invalid > 0:
-    print("DE: skipped {} invalid row(s) (missing columns or non-numeric score).".format(invalid))
+    print("Scores: skipped {} invalid row(s) (missing columns or non-numeric score).".format(invalid))
 
 if kept == 0:
-    print("ERROR: After filtering to PPI genes, 0 DE rows remained. Check gene_id naming consistency between DE and PPI.", file=sys.stderr)
+    print("ERROR: After filtering to PPI genes, 0 score rows remained. Check gene_id naming consistency between the score file and PPI.", file=sys.stderr)
     sys.exit(2)
 
-print("DE: kept {} row(s) after abs(score) + filtering to PPI genes.".format(kept))
+print("Scores: kept {} row(s) after filtering to PPI genes.".format(kept))
 PY
 }
 
@@ -492,8 +492,8 @@ stage_cached_similarity_matrix() {
 echo "Preparing PPI: generating index_gene.tsv + indexed edge_list.tsv (and removing duplicates / extra columns as needed)..."
 prepare_ppi_indexed "$PPI" "$EDGE_LIST_FILE" "$INDEX_GENE_FILE" "$GENES_FILE"
 
-echo "Preparing DE: converting score to abs(score) and filtering to PPI genes..."
-normalize_de_abs_filter_to_ppi "$DE" "$GENES_FILE" "$SCORES0_FILE"
+echo "Preparing scores: converting score to abs(score) and filtering to PPI genes..."
+normalize_scores_filter_to_ppi "$SCORES" "$GENES_FILE" "$SCORES0_FILE"
 
 pushd "$HHNET_DIR" >/dev/null
 
