@@ -4,8 +4,7 @@ Dysregulated subnetworks → integrated evidence ranking.
 
 NetIntegRank is a modular Nextflow pipeline for identifying dysregulated subnetworks from a user-supplied gene-level score file and prioritising candidate targets by integrating network topology, structural druggability, and optional features.
 
-This repository reflects the workflow developed during my PhD. The broader project data and related analyses can be found in the companion repository:  
-`https://github.com/talgalper/PhD-MOC.git`
+This repository reflects the workflow developed during my PhD. The broader project data and related analyses can be found in the repository: `https://github.com/talgalper/PhD-MOC.git`.
 
 ---
 
