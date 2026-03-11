@@ -2,7 +2,7 @@
 
 Dysregulated subnetworks → integrated evidence ranking.
 
-NetIntegRank is a modular Nextflow pipeline for identifying dysregulated subnetworks from differential expression data and prioritising candidate targets by integrating network topology, structural druggability, and optional features.
+NetIntegRank is a modular Nextflow pipeline for identifying dysregulated subnetworks from a user-supplied gene-level score file and prioritising candidate targets by integrating network topology, structural druggability, and optional features.
 
 This repository reflects the workflow developed during my PhD. The broader project data and related analyses can be found in the companion repository:  
 `https://github.com/talgalper/PhD-MOC.git`
@@ -14,7 +14,7 @@ This repository reflects the workflow developed during my PhD. The broader proje
 NetIntegRank currently runs three main stages:
 
 1. **HHNet**
-   - infers dysregulated clusters from differential expression (DE) scores and a protein-protein interaction (PPI) network
+   - infers dysregulated clusters from a gene-level score file and a protein-protein interaction (PPI) network
 
 2. **HHNet post-processing**
    - reconstructs cluster subnetworks
@@ -145,6 +145,12 @@ chmod +x bin/run_hhnet.sh
 ---
 
 ## Running the pipeline
+> **Note -**
+> If your run is interupted, include `-resume` in the command and it will continue from the last cahced save:
+> `nextflow run main.nf -profile conda -resume \`
+>   ...
+
+> If the run is repeatedly being stopped when trying to annotate IDs, try again later or restart the working environment. Sometimes it's just issues on the Ensembl server side.
 
 
 ### Basic example
@@ -152,7 +158,7 @@ chmod +x bin/run_hhnet.sh
 ```bash
 nextflow run main.nf -profile conda \
   --outdir results \
-  --de_results path/to/de.tsv \
+  --scores path/to/scores.tsv \
   --ppi_network path/to/ppi.tsv \
   --druggability path/to/druggability.tsv \
   --ml_scores path/to/ml_scores.tsv \
@@ -161,12 +167,12 @@ nextflow run main.nf -profile conda \
 
 ### Example starter command
 
-A more explicit example is:
+A more explicit example (using DE scores) is:
 
 ```bash
 nextflow run main.nf -profile conda \
   --outdir results_example \
-  --de_results example/logFC_scores_abs.tsv \
+  --scores example/logFC_scores_abs.tsv \
   --ppi_network assets/STRING_physical_ENSG.csv \
   --druggability assets/druggability_scores_annot2.0.csv \
   --ml_scores assets/ML_data.csv \
@@ -185,7 +191,7 @@ nextflow run main.nf -profile conda \
 
 The pipeline currently expects the following required inputs:
 
-* `--de_results`
+* `--scores`
 * `--ppi_network`
 * `--druggability`
 * `--ml_scores`
@@ -202,7 +208,7 @@ Optional inputs include:
 
 ## Input formats
 
-### 1) Differential expression scores (`--de_results`)
+### 1) Gene-level score file (`--scores`)
 
 Expected as a two-column table:
 
@@ -213,8 +219,10 @@ Notes:
 
 * `gene_id` must match the identifier namespace used in the PPI network
 * a header row is allowed
-* this pipeline has primarily been used with **absolute differential expression scores**
-* if signed scores are used, interpretation should be done carefully because sign direction and subnetwork behaviour may not be desirable in all use cases
+* the second column must be numeric
+* the pipeline does **not** convert signed values to absolute values internally
+* users should provide scores in the exact form they want HHNet to use
+* in the testing setup and in my PhD thesis, the supplied scores were typically **absolute differential expression logFC values**
 
 ---
 
@@ -237,7 +245,7 @@ The HHNet wrapper is expected to:
 * generate internal indexed network files for HHNet
 
 > **Similarity matrix caching-**
-> HHNet can construct a `similarity_matrix.h5` file from the processed PPI network. For large networks this can take substantial time. To reduce repeat work, the wrapper caches the similarity matrix and associated `beta.txt` using the processed/canonicalised PPI network as the cache key. Reusing the same network should therefore speed up later runs.
+> HHNet can construct a `similarity_matrix.h5` file from the processed PPI network. For large networks this can take substantial time. To reduce repeat work, the wrapper caches the similarity matrix and associated `beta.txt` using the processed/canonicalised PPI network as the cache key (i.e. same PPI file = same similarity matrix). 
 
 ---
 
@@ -276,7 +284,7 @@ These counts are appended to the final output and are **not used for ranking unl
 
 ### 6) Optional gene mapping (`--gene_map`)
 
-Optional TSV/CSV used to map Ensembl IDs to UniProt IDs and gene symbols, reducing or avoiding repeated annotation lookups.
+Optional TSV/CSV used to map Ensembl IDs to UniProt IDs and gene symbols, reducing or avoiding repeated annotation lookups (via biomaRt).
 
 Recommended columns:
 
