@@ -9,7 +9,7 @@ nextflow_pipeline {
         when {
             params {
                 outdir = "${projectDir}/tests/results/full_stub"
-                de_results = "${projectDir}/tests/fixtures/DE_test.csv"
+                scores = "${projectDir}/tests/fixtures/DE_test.csv"
                 ppi_network = "${projectDir}/tests/fixtures/PPI_test.csv"
                 druggability = "${projectDir}/assets/druggability_scores_annot2.0.csv"
                 ml_scores = "${projectDir}/assets/ML_data.csv"
@@ -53,7 +53,7 @@ nextflow_pipeline {
         when {
             params {
                 outdir = "${projectDir}/tests/results/full_real"
-                de_results = "${projectDir}/tests/fixtures/DE_test.csv"
+                scores = "${projectDir}/tests/fixtures/DE_test.csv"
                 ppi_network = "${projectDir}/tests/fixtures/PPI_test.csv"
                 druggability = "${projectDir}/assets/druggability_scores_annot2.0.csv"
                 ml_scores = "${projectDir}/assets/ML_data.csv"
