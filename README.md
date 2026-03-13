@@ -152,37 +152,52 @@ chmod +x bin/run_hhnet.sh
 > If the run is repeatedly being stopped when trying to annotate IDs, try again later or restart the working environment. Sometimes it's just issues on the Ensembl server side.
 
 
-### Basic example
+### Example run (default params)
+
+It is suggested to defaults unless you are comfortable with this tool which you can run easily by calling the default [parameter file](params/example_default.yaml) which you will need to update at the indicated fields. I would suggested making a copy of this file and changing the name to something more appropriate as well.
 
 ```bash
-nextflow run main.nf -profile conda \
-  --outdir results \
-  --scores path/to/scores.tsv \
-  --ppi_network path/to/ppi.tsv \
-  --druggability path/to/druggability.tsv \
-  --ml_scores path/to/ml_scores.tsv \
-  --citations path/to/citations.tsv
+nextflow run main.nf -profile conda -params-file params/example_default.yaml
 ```
 
-### Example starter command
+The params can be run in command line as well if you want to do your own scripting:
+<details>
+  <summary>show example commands</summary>
 
-A more explicit example (using DE scores) is:
+  ### Basic example
 
-```bash
-nextflow run main.nf -profile conda \
-  --outdir results_example \
-  --scores example/logFC_scores_abs.tsv \
-  --ppi_network assets/STRING_physical_ENSG.csv \
-  --druggability assets/druggability_scores_annot2.0.csv \
-  --ml_scores assets/ML_data.csv \
-  --citations assets/PubTator3_counts.csv \
-  --hhnet_run_id example_run \
-  --hhnet_num_permutations 100 \
-  --hhnet_min_cluster_size 2 \
-  --hhnet_n_clusters 0 \
-  --ranking_network neighbours \
-  --ranking_features "degree,betweenness,closeness,eigen_centrality,page_rank,highest_score"
-```
+  ```bash
+  nextflow run main.nf -profile conda \
+    --outdir results \
+    --scores path/to/scores.tsv \
+    --ppi_network path/to/ppi.tsv \
+    --druggability path/to/druggability.tsv \
+    --ml_scores path/to/ml_scores.tsv \
+    --citations path/to/citations.tsv
+  ```
+
+  ### Example starter command
+
+  A more explicit example (using DE scores) is:
+
+  ```bash
+  nextflow run main.nf -profile conda \
+    --outdir results_example \
+    --scores example/logFC_scores_abs.tsv \
+    --ppi_network assets/STRING_physical_ENSG.csv \
+    --druggability assets/druggability_scores_annot2.0.csv \
+    --ml_scores assets/ML_data.csv \
+    --citations assets/PubTator3_counts.csv \
+    --hhnet_run_id example_run \
+    --hhnet_num_permutations 100 \
+    --hhnet_min_cluster_size 2 \
+    --hhnet_n_clusters 0 \
+    --ranking_network neighbours \
+    --ranking_features "degree,betweenness,closeness,eigen_centrality,page_rank,drug_score"
+  ```
+</details>
+
+<br/>
 
 Be sure to test the pipeline before your first run. Jump to the [testing section](#testing) below for more info.
 
@@ -376,7 +391,7 @@ If `--gene_map` is not provided, the ranking stage attempts to reuse an annotati
 
 * `--ranking_features` \
   Default:
-  `degree,betweenness,closeness,eigen_centrality,page_rank,highest_score`
+  `degree,betweenness,closeness,eigen_centrality,page_rank,drug_score`
 
   Comma-separated numeric columns used in the averaged ranking.
 
