@@ -1,0 +1,29 @@
+outdir: results_example # replace with actual name i.e. "breast_cancer_results"
+
+scores: example/logFC_scores_abs.tsv # replace with actualy path to score file
+ppi_network: assets/STRING_physical_ENSG.csv
+druggability: assets/druggability_scores_annot2.0.csv
+ml_scores: assets/ML_data.csv
+citations: assets/PubTator3_counts.csv
+gene_map: null
+id_annot_cache: null
+
+hhnet_run_id: example_run # edit with more appropriate name i.e. breast_cancer
+hhnet_num_permutations: 100
+hhnet_network_name: STRING
+hhnet_score_name: scores # change to easy name i.e. BRCA
+hhnet_compile_fortran: auto
+hhnet_dir: null
+
+hhnet_min_cluster_size: 2
+hhnet_n_clusters: 0
+hhnet_seed: 1234
+hhnet_node_id_type: ensembl_gene_id # chnage if using different PPI with different gene ID type
+hhnet_extra_colours: ""
+hhnet_plot_max_nodes: 5000
+
+ranking_network: neighbours
+ranking_features: "degree,betweenness,closeness,eigen_centrality,page_rank,drug_score"
+negative_features: ""
+ranking_step: 0.1
+write_rds: true # set to false if you dont want R data objects created
