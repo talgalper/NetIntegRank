@@ -1,6 +1,6 @@
 outdir: results_example # replace with actual name i.e. "breast_cancer_results"
 
-scores: example/logFC_scores_abs.tsv # replace with actualy path to score file
+scores: example/logFC_scores_abs.tsv # replace with actual path to score file
 ppi_network: assets/STRING_physical_ENSG.csv
 druggability: assets/druggability_scores_annot2.0.csv
 ml_scores: assets/ML_data.csv
