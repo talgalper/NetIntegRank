@@ -87,8 +87,8 @@ A simple installation approach is:
 
 ```bash
 curl -s https://get.nextflow.io | bash
-mv nextflow ~/bin/
-chmod +x ~/bin/nextflow
+mv nextflow /bin/
+chmod +x /bin/nextflow
 ```
 
 Make sure `~/bin` is on your `PATH`, then verify:
