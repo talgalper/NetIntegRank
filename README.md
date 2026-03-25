@@ -91,7 +91,7 @@ mv nextflow /bin/
 chmod +x /bin/nextflow
 ```
 
-Make sure `~/bin` is on your `PATH`, then verify:
+Make sure `/bin` is on your `PATH`, then verify:
 
 ```bash
 nextflow -version
@@ -115,8 +115,8 @@ conda --version
 
 ```bash
 curl -fsSL https://get.nf-test.com | bash
-mv nf-test ~/bin/
-chmod +x ~/bin/nf-test
+mv nf-test /bin/
+chmod +x /bin/nf-test
 ```
 
 Verify installation:
