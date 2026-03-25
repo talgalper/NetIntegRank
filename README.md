@@ -34,7 +34,7 @@ By default, **ML scores and citation counts are appended to the final outputs bu
 
 The pipeline is currently configured primarily for **Conda-based execution**.
 
-`nextflow.config` also contains `docker` and `apptainer` profiles, but this repository is most clearly set up and documented for `-profile conda`. Unless you have also configured suitable container images separately, Conda should be treated as the supported path.
+`nextflow.config` also contains `docker` and `apptainer` profiles, but this repository is most clearly set up and documented for `-profile conda`. Unless you have also configured suitable container images separately, Conda should be treated as the supported path. May add proper docker support at a later date.
 
 Provided Conda environments:
 
