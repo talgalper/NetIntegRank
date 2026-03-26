@@ -10,6 +10,7 @@ id_annot_cache: null
 
 hhnet_run_id: example_run # edit with more appropriate name i.e. breast_cancer
 hhnet_num_permutations: 100
+cpus: 4
 hhnet_network_name: STRING
 hhnet_score_name: scores # change to easy name i.e. BRCA
 hhnet_compile_fortran: auto
