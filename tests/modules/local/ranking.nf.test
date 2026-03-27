@@ -52,6 +52,13 @@ nextflow_process {
             def missingCsvLines = path(process.out.missing_gene_name_csv.get(0)).readLines()
             assert missingCsvLines.size() >= 1
             assert missingCsvLines.get(0).contains("removal_reason")
+
+            assert process.out.missing_annotations_tsv.size() == 1
+            assert path(process.out.missing_annotations_tsv.get(0)).getFileName().toString() == "final_ranked_missing_annotations.tsv"
+
+            def missingAnnotLines = path(process.out.missing_annotations_tsv.get(0)).readLines()
+            assert missingAnnotLines.size() >= 1
+            assert missingAnnotLines.get(0).contains("missing_annotation_fields")
         }
     }
 }

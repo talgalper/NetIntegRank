@@ -36,6 +36,8 @@ option_list <- list(
               help = "Optional output RDS path for rows removed before ranking."),
   make_option("--out_missing_gene_name_csv", type = "character", default = NULL,
               help = "Optional output CSV path for hhnet_metrics rows missing external_gene_name."),
+  make_option("--out_missing_annotations_tsv", type = "character", default = NULL,
+              help = "Optional output TSV path for ranked genes that could not be matched to ML scores and/or citation counts."),
   make_option("--write_rds", type = "character", default = "TRUE",
               help = "Whether to write RDS outputs for ranked and incomplete tables. TRUE or FALSE. Default: TRUE")
 )
@@ -434,6 +436,12 @@ if (is.null(args$out_missing_gene_name_csv) || !nzchar(args$out_missing_gene_nam
     args$out_missing_gene_name_csv <- paste0(args$out_tsv, "_missing_external_gene_name.csv")
   }
 }
+if (is.null(args$out_missing_annotations_tsv) || !nzchar(args$out_missing_annotations_tsv)) {
+  args$out_missing_annotations_tsv <- sub("\\.tsv$", "_missing_annotations.tsv", args$out_tsv, ignore.case = TRUE)
+  if (identical(args$out_missing_annotations_tsv, args$out_tsv)) {
+    args$out_missing_annotations_tsv <- paste0(args$out_tsv, "_missing_annotations.tsv")
+  }
+}
 
 id_annot_cache_path <- args$id_annot_cache
 if (is.null(id_annot_cache_path) || !nzchar(id_annot_cache_path)) {
@@ -575,7 +583,8 @@ out_dirs <- unique(dirname(c(
   args$out_rds,
   args$out_incomplete_tsv,
   args$out_incomplete_rds,
-  args$out_missing_gene_name_csv
+  args$out_missing_gene_name_csv,
+  args$out_missing_annotations_tsv
 )))
 for (d in out_dirs) {
   if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
@@ -597,3 +606,45 @@ write.csv(missing_gene_name_rows,
           file = args$out_missing_gene_name_csv,
           row.names = FALSE,
           quote = TRUE)
+
+# -------------------------
+# Post-ranking annotation audit
+# Genes that were ranked but could not be matched to ML scores and/or citation
+# counts.
+# -------------------------
+
+annotation_check_cols <- c("counts", "Prediction_Score_rf")
+present_annot_cols    <- intersect(annotation_check_cols, colnames(RS_data))
+
+if (length(present_annot_cols) > 0) {
+  missing_annot_matrix <- sapply(present_annot_cols, function(col) {
+    x <- RS_data[[col]]
+    if (is.character(x)) is.na(x) | trimws(x) == "" else is.na(x)
+  }, simplify = "matrix")
+
+  if (length(present_annot_cols) == 1) {
+    missing_annot_matrix <- matrix(missing_annot_matrix, ncol = 1)
+    colnames(missing_annot_matrix) <- present_annot_cols
+  }
+
+  missing_annot_idx    <- apply(missing_annot_matrix, 1, any)
+  missing_annot_fields <- apply(missing_annot_matrix, 1, function(x)
+    paste(present_annot_cols[which(x)], collapse = ";"))
+
+  missing_annot_rows <- RS_data[missing_annot_idx, , drop = FALSE]
+  if (nrow(missing_annot_rows) > 0) {
+    missing_annot_rows$missing_annotation_fields <- missing_annot_fields[missing_annot_idx]
+  }
+} else {
+  missing_annot_rows <- RS_data[integer(0), , drop = FALSE]
+  missing_annot_rows$missing_annotation_fields <- character(0)
+}
+
+message(sprintf(
+  "%d ranked gene(s) could not be matched to one or more annotation sources (ML scores / citations).",
+  nrow(missing_annot_rows)
+))
+
+write.table(missing_annot_rows,
+            file = args$out_missing_annotations_tsv,
+            sep  = "\t", row.names = FALSE, quote = FALSE)

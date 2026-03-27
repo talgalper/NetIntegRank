@@ -91,6 +91,7 @@ nextflow_pipeline {
             assert path("${params.outdir}/hhnet_processing/hhnet_subnet_metrics.tsv").exists()
             assert path("${params.outdir}/hhnet_processing/hhnet_neighbour_metrics.tsv").exists()
             assert path("${params.outdir}/ranking/final_ranked.tsv").exists()
+            assert path("${params.outdir}/ranking/final_ranked_missing_annotations.tsv").exists()
         
             assert path("${params.outdir}/ranking/final_ranked.tsv").readLines().size() >= 2
         

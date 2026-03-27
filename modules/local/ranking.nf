@@ -15,6 +15,7 @@ process RANKING {
     path "final_ranked_incomplete.tsv", emit: incomplete_tsv
     path "final_ranked_incomplete.rds", optional: true, emit: incomplete_rds
     path "final_ranked_missing_external_gene_name.csv", emit: missing_gene_name_csv
+    path "final_ranked_missing_annotations.tsv", emit: missing_annotations_tsv
     path "id_annot_cache.tsv", optional: true, emit: id_cache
 
   script:
@@ -67,11 +68,13 @@ process RANKING {
       --out_rds final_ranked.rds \
       --out_incomplete_tsv final_ranked_incomplete.tsv \
       --out_incomplete_rds final_ranked_incomplete.rds \
-      --out_missing_gene_name_csv final_ranked_missing_external_gene_name.csv
+      --out_missing_gene_name_csv final_ranked_missing_external_gene_name.csv \
+      --out_missing_annotations_tsv final_ranked_missing_annotations.tsv
     
     test -s final_ranked.tsv
     test -e final_ranked_incomplete.tsv
     test -e final_ranked_missing_external_gene_name.csv
+    test -e final_ranked_missing_annotations.tsv
     
     if [ "${writeRds}" = "true" ]; then
       test -s final_ranked.rds
@@ -99,6 +102,11 @@ EOF
     cat > final_ranked_missing_external_gene_name.csv <<'EOF'
 "ensembl_gene_id","external_gene_name","removal_reason"
 "ENSG000004","","missing_external_gene_name"
+EOF
+
+    cat > final_ranked_missing_annotations.tsv <<'EOF'
+external_gene_name	ensembl_gene_id	uniprot_gn_id	avg_rank	rank_variance	counts	Prediction_Score_rf	missing_annotation_fields
+GENE5	ENSG000005	NA	3.80	0.42	NA	NA	counts;Prediction_Score_rf
 EOF
 
     touch final_ranked.rds
