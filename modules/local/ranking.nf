@@ -37,13 +37,16 @@ process RANKING {
       ? "--step ${params.ranking_step}" \
       : ""
 
+    def nodeIdTypeArg = (params.hhnet_node_id_type && params.hhnet_node_id_type.toString().trim()) \
+      ? "--node_id_type '${params.hhnet_node_id_type}'" \
+      : ""
+
     def cachePath = (params.id_annot_cache && params.id_annot_cache.toString().trim()) \
       ? params.id_annot_cache.toString() \
       : "${params.outdir}/ranking/id_annot_cache.tsv"
 
-    def writeRdsArg = (params.write_rds != null && params.write_rds.toString().trim())
-      ? "--write_rds '${params.write_rds}'"
-      : ""
+    def writeRds = (params.write_rds == null) ? "true" : params.write_rds.toString().trim().toLowerCase()
+    def writeRdsArg = "--write_rds '${writeRds}'"
 
     """
     mkdir -p "\$(dirname '${cachePath}')"
@@ -57,6 +60,7 @@ process RANKING {
       ${featArg} \
       ${negFeatArg} \
       ${stepArg} \
+      ${nodeIdTypeArg} \
       ${writeRdsArg} \
       --id_annot_cache '${cachePath}' \
       --out_tsv final_ranked.tsv \
@@ -69,7 +73,7 @@ process RANKING {
     test -e final_ranked_incomplete.tsv
     test -e final_ranked_missing_external_gene_name.csv
     
-    if [ "${params.write_rds ?: 'true'}" = "true" ] || [ "${params.write_rds ?: 'TRUE'}" = "TRUE" ]; then
+    if [ "${writeRds}" = "true" ]; then
       test -s final_ranked.rds
       test -e final_ranked_incomplete.rds
     fi
