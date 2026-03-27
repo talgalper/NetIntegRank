@@ -11,8 +11,10 @@ process HHNET {
     path "clusters_${params.hhnet_network_name}_${params.hhnet_score_name}.tsv", emit: clusters
 
   script:
-    def hhnetDirArg = params.hhnet_dir ? "--hhnet_dir ${params.hhnet_dir}" : ""
-    def runIdArg    = params.hhnet_run_id ? "--run_id ${params.hhnet_run_id}" : ""
+    def hhnetDirArg        = params.hhnet_dir              ? "--hhnet_dir ${params.hhnet_dir}"                           : ""
+    def runIdArg           = params.hhnet_run_id           ? "--run_id ${params.hhnet_run_id}"                           : ""
+    def intermCacheArg     = params.hhnet_intermediate_cache_dir \
+                                                           ? "--intermediate_cache_dir ${params.hhnet_intermediate_cache_dir}" : ""
 
     """
     run_hhnet.sh \
@@ -25,7 +27,8 @@ process HHNET {
       --num_permutations ${params.hhnet_num_permutations} \
       --num_cores ${task.cpus} \
       --compile_fortran ${params.hhnet_compile_fortran} \
-      ${hhnetDirArg}
+      ${hhnetDirArg} \
+      ${intermCacheArg}
 
     test -s clusters_${params.hhnet_network_name}_${params.hhnet_score_name}.tsv
     """

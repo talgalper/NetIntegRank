@@ -19,10 +19,12 @@ Optional:
   --score_name        Score label (default: DE)
   --num_permutations  Number of score permutations (default: 100)
   --num_cores         Number of cores for GNU parallel and HHNet post-processing (default: 1)
-  --compile_fortran   Fortran compilation mode: auto|always|never (default: auto)
-  --hhnet_dir         Path to hierarchical_hotnet directory (default: <script_dir>/hierarchical_hotnet
-                      fallback: <script_dir>/hierarchical-hotnet)
-  -h, --help          Show this help message
+  --compile_fortran        Fortran compilation mode: auto|always|never (default: auto)
+  --hhnet_dir              Path to hierarchical_hotnet directory (default: <script_dir>/hierarchical_hotnet
+                           fallback: <script_dir>/hierarchical-hotnet)
+  --intermediate_cache_dir Directory to cache intermediate HHNet files keyed by (PPI, score) hash.
+                           If omitted, no intermediate caching is performed.
+  -h, --help               Show this help message
 
 Outputs:
   Canonical HHNet outputs are written under either:
@@ -36,9 +38,17 @@ Outputs:
     <outdir>/clusters_<NETWORK>_<SCORE>.tsv
 
 Caching:
-  The similarity matrix is cached globally under <hhnet_dir>/cache/similarity_matrices/
-  using a hash of the indexed PPI edge list. Reusing the same PPI network will therefore
-  reuse the cached similarity_matrix.h5 and beta.txt in later runs.
+  Similarity matrix:
+    Cached globally under <hhnet_dir>/cache/similarity_matrices/ using a hash of the
+    indexed PPI edge list. Reusing the same PPI network reuses cached similarity_matrix.h5
+    and beta.txt in later runs.
+
+  Intermediate files (score_bins, permuted scores, hierarchies):
+    If --intermediate_cache_dir is provided, these files are cached under:
+      <intermediate_cache_dir>/<ppi_hash>_<score_hash>/
+    The cache key is a SHA-256 hash of (indexed_edge_list, scores_0.tsv).
+    A cache hit skips find_permutation_bins, permute_scores, and construct_hierarchy entirely,
+    and links the cached files into the current intermediate directory before process_hierarchies.
 USAGE
 }
 
@@ -54,6 +64,7 @@ SCORE="DE"
 NUM_PERMUTATIONS=100
 NUM_CORES=1
 COMPILE_FORTRAN="auto"
+INTERMEDIATE_CACHE_DIR=""
 
 # Default HHNET_DIR resolution (prefer underscore, fallback to hyphen)
 HHNET_DIR_DEFAULT_UNDERSCORE="${SCRIPT_DIR}/hierarchical_hotnet"
@@ -72,6 +83,7 @@ while [[ $# -gt 0 ]]; do
     --num_cores) NUM_CORES="$2"; shift 2 ;;
     --compile_fortran) COMPILE_FORTRAN="$2"; shift 2 ;;
     --hhnet_dir) HHNET_DIR="$2"; shift 2 ;;
+    --intermediate_cache_dir) INTERMEDIATE_CACHE_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -489,6 +501,84 @@ stage_cached_similarity_matrix() {
   ln -sfn "$cache_beta" "$beta_out"
 }
 
+# ---------------------------------------------------------------------------
+# Intermediate-file cache: keyed on SHA-256(indexed_edge_list + scores_0.tsv)
+# ---------------------------------------------------------------------------
+# Returns 0 (cache hit) or 1 (cache miss).
+# On a hit: symlinks every file from the cache dir into INTERMEDIATE_DIR/<NETWORK>_<SCORE>/
+# On a miss: after the caller computes the intermediates it should call
+#            store_cached_intermediates to populate the cache.
+check_cached_intermediates() {
+  local edge_list_file="$1"
+  local scores0_file="$2"
+  local intermediate_dir="$3"   # e.g. .../intermediate/<NETWORK>_<SCORE>
+  local cache_root="$4"
+
+  local ppi_hash score_hash cache_key cache_dir stamp
+  ppi_hash="$(compute_file_sha256 "$edge_list_file")"
+  score_hash="$(compute_file_sha256 "$scores0_file")"
+  cache_key="${ppi_hash}_${score_hash}"
+  cache_dir="${cache_root}/${cache_key}"
+  stamp="${cache_dir}/.complete"
+
+  # Export so store_cached_intermediates can use the same values
+  INTERMEDIATE_CACHE_DIR_ACTIVE="$cache_root"
+  INTERMEDIATE_CACHE_KEY="$cache_key"
+
+  if [[ -f "$stamp" && -d "$cache_dir" ]]; then
+    echo "[Intermediate cache] HIT for key: ${cache_key}"
+    echo "[Intermediate cache] Linking cached files into: ${intermediate_dir}"
+    for cached_file in "${cache_dir}"/*; do
+      [[ -f "$cached_file" ]] || continue
+      local fname
+      fname="$(basename "$cached_file")"
+      ln -sfn "$cached_file" "${intermediate_dir}/${fname}"
+    done
+    return 0
+  fi
+
+  echo "[Intermediate cache] MISS for key: ${cache_key} — will compute intermediates"
+  return 1
+}
+
+store_cached_intermediates() {
+  local intermediate_dir="$1"   # source: .../intermediate/<NETWORK>_<SCORE>
+  local num_permutations="$2"
+  local network="$3"
+  local score="$4"
+
+  [[ -n "${INTERMEDIATE_CACHE_DIR_ACTIVE:-}" ]] || return 0
+  [[ -n "${INTERMEDIATE_CACHE_KEY:-}" ]] || return 0
+
+  local cache_dir="${INTERMEDIATE_CACHE_DIR_ACTIVE}/${INTERMEDIATE_CACHE_KEY}"
+  local stamp="${cache_dir}/.complete"
+
+  mkdir -p "$cache_dir"
+
+  echo "[Intermediate cache] Storing intermediates to: ${cache_dir}"
+
+  # Copy score_bins
+  [[ -f "${intermediate_dir}/score_bins.tsv" ]] && \
+    cp "${intermediate_dir}/score_bins.tsv" "${cache_dir}/score_bins.tsv"
+
+  # Copy permuted scores (1..N)
+  for i in $(seq "$num_permutations"); do
+    local f="${intermediate_dir}/scores_${i}.tsv"
+    [[ -f "$f" ]] && cp "$f" "${cache_dir}/scores_${i}.tsv"
+  done
+
+  # Copy hierarchy files (0..N)
+  for i in $(seq 0 "$num_permutations"); do
+    local elf="${intermediate_dir}/hierarchy_edge_list_${i}.tsv"
+    local igf="${intermediate_dir}/hierarchy_index_gene_${i}.tsv"
+    [[ -f "$elf" ]] && cp "$elf" "${cache_dir}/hierarchy_edge_list_${i}.tsv"
+    [[ -f "$igf" ]] && cp "$igf" "${cache_dir}/hierarchy_index_gene_${i}.tsv"
+  done
+
+  touch "$stamp"
+  echo "[Intermediate cache] Store complete — stamp written"
+}
+
 echo "Preparing PPI: generating index_gene.tsv + indexed edge_list.tsv (and removing duplicates / extra columns as needed)..."
 prepare_ppi_indexed "$PPI" "$EDGE_LIST_FILE" "$INDEX_GENE_FILE" "$GENES_FILE"
 
@@ -525,32 +615,53 @@ stage_cached_similarity_matrix \
   "$BETA_FILE" \
   "$SIMILARITY_CACHE_ROOT"
 
-echo "Finding permutation bins..."
-python src/find_permutation_bins.py \
-  -gsf "$SCORES0_FILE" \
-  -igf "$INDEX_GENE_FILE" \
-  -elf "$EDGE_LIST_FILE" \
-  -ms  1000 \
-  -o   "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/score_bins.tsv"
+_INTERMEDIATE_CACHE_HIT=0
+if [[ -n "$INTERMEDIATE_CACHE_DIR" ]]; then
+  if check_cached_intermediates \
+      "$EDGE_LIST_FILE" \
+      "$SCORES0_FILE" \
+      "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}" \
+      "$INTERMEDIATE_CACHE_DIR"; then
+    _INTERMEDIATE_CACHE_HIT=1
+  fi
+fi
 
-echo "Permuting scores (${NUM_PERMUTATIONS})..."
-parallel -u -j "$NUM_CORES" --bar \
-  python src/permute_scores.py \
-    -i  "$SCORES0_FILE" \
-    -bf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/score_bins.tsv" \
-    -s  {} \
-    -o  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_{}.tsv" \
-  ::: $(seq "$NUM_PERMUTATIONS")
+if [[ "$_INTERMEDIATE_CACHE_HIT" -eq 0 ]]; then
+  echo "Finding permutation bins..."
+  python src/find_permutation_bins.py \
+    -gsf "$SCORES0_FILE" \
+    -igf "$INDEX_GENE_FILE" \
+    -elf "$EDGE_LIST_FILE" \
+    -ms  1000 \
+    -o   "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/score_bins.tsv"
 
-echo "Constructing hierarchies..."
-parallel -u -j "$NUM_CORES" --bar \
-  python src/construct_hierarchy.py \
-    -smf  "$SIMILARITY_MATRIX_FILE" \
-    -igf  "$INDEX_GENE_FILE" \
-    -gsf  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_{}.tsv" \
-    -helf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_edge_list_{}.tsv" \
-    -higf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_index_gene_{}.tsv" \
-  ::: $(seq 0 "$NUM_PERMUTATIONS")
+  echo "Permuting scores (${NUM_PERMUTATIONS})..."
+  parallel -u -j "$NUM_CORES" --bar \
+    python src/permute_scores.py \
+      -i  "$SCORES0_FILE" \
+      -bf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/score_bins.tsv" \
+      -s  {} \
+      -o  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_{}.tsv" \
+    ::: $(seq "$NUM_PERMUTATIONS")
+
+  echo "Constructing hierarchies..."
+  parallel -u -j "$NUM_CORES" --bar \
+    python src/construct_hierarchy.py \
+      -smf  "$SIMILARITY_MATRIX_FILE" \
+      -igf  "$INDEX_GENE_FILE" \
+      -gsf  "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/scores_{}.tsv" \
+      -helf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_edge_list_{}.tsv" \
+      -higf "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}/hierarchy_index_gene_{}.tsv" \
+    ::: $(seq 0 "$NUM_PERMUTATIONS")
+
+  if [[ -n "$INTERMEDIATE_CACHE_DIR" ]]; then
+    store_cached_intermediates \
+      "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}" \
+      "$NUM_PERMUTATIONS" \
+      "$NETWORK" \
+      "$SCORE"
+  fi
+fi
 
 echo "Processing hierarchies..."
 python src/process_hierarchies.py \
