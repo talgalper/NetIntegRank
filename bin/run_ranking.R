@@ -22,6 +22,8 @@ option_list <- list(
               help = "Optional comma-separated ranking features to subtract rather than add."),
   make_option("--step", type = "double", default = 0.1,
               help = "Weight grid step for sensitivity ranking. Default: 0.1"),
+  make_option("--node_id_type", type = "character", default = "ensembl_gene_id",
+              help = "Primary node identifier in hhnet_metrics. Must be one of: ensembl_gene_id, external_gene_name. Default: ensembl_gene_id"),
   make_option("--out_tsv", type = "character",
               help = "Output TSV path for final ranking."),
   make_option("--out_rds", type = "character",
@@ -59,6 +61,17 @@ parse_bool <- function(x, arg_name) {
 }
 
 write_rds <- parse_bool(args$write_rds, "--write_rds")
+
+valid_node_id_types <- c("ensembl_gene_id", "external_gene_name")
+node_id_type <- trimws(as.character(args$node_id_type))
+if (!node_id_type %in% valid_node_id_types) {
+  stop(sprintf(
+    "Invalid --node_id_type: %s. Valid options are: %s",
+    node_id_type,
+    paste(valid_node_id_types, collapse = ", ")
+  ), call. = FALSE)
+}
+primary_id_col <- node_id_type
 
 read_table_auto <- function(path) {
   if (!file.exists(path)) {
@@ -366,6 +379,7 @@ druggability  <- read_table_auto(args$druggability)
 ml_scores     <- read_table_auto(args$ml_scores)
 citations     <- read_table_auto(args$citations)
 
+# Keep both columns required to preserve the existing output structure and downstream behaviour.
 require_columns(hhnet_metrics, c("ensembl_gene_id", "external_gene_name"), "hhnet_metrics", args$hhnet_metrics)
 require_columns(druggability, c("external_gene_name", "drug_score"), "druggability", args$druggability)
 require_columns(ml_scores, c("Protein", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
@@ -390,7 +404,14 @@ druggability  <- normalise_id_column(druggability, "external_gene_name")
 ml_scores     <- normalise_id_column(ml_scores, "Protein")
 citations     <- normalise_id_column(citations, "symbol")
 
-require_non_missing(hhnet_metrics, c("ensembl_gene_id"), "hhnet_metrics", args$hhnet_metrics)
+message(sprintf(
+  "Using primary node ID type: %s",
+  primary_id_col
+))
+
+# Only the selected primary node ID is hard-required to be fully populated here.
+# This is the key behavioural change.
+require_non_missing(hhnet_metrics, c(primary_id_col), "hhnet_metrics", args$hhnet_metrics)
 require_non_missing(druggability, c("drug_score"), "druggability", args$druggability)
 require_non_missing(ml_scores, c("Protein", "Prediction_Score_rf"), "ml_scores", args$ml_scores)
 require_non_missing(citations, c("symbol", "counts"), "citations", args$citations)
@@ -472,9 +493,9 @@ if (length(non_numeric) > 0) {
        call. = FALSE)
 }
 
+# Only enforce completeness on the selected primary ID, not the alternate ID.
 required_for_ranking <- unique(c(
-  "ensembl_gene_id",
-  "external_gene_name",
+  primary_id_col,
   "drug_score",
   ranking_features
 ))
@@ -502,11 +523,12 @@ RS_data <- avg_rank_sensitivity(rank_input,
                                 negative_features = negative_features,
                                 step = args$step)
 
-append_cols <- rank_data_complete[, c("ensembl_gene_id", "counts"), drop = FALSE]
-append_cols <- append_cols[!duplicated(append_cols$ensembl_gene_id), , drop = FALSE]
+# Reattach counts using the chosen primary identifier.
+append_cols <- rank_data_complete[, c(primary_id_col, "counts"), drop = FALSE]
+append_cols <- append_cols[!duplicated(append_cols[[primary_id_col]]), , drop = FALSE]
 
 RS_data <- left_join_first(RS_data, append_cols,
-                           by_x = "ensembl_gene_id", by_y = "ensembl_gene_id",
+                           by_x = primary_id_col, by_y = primary_id_col,
                            cols_y = "counts")
 
 # add uniprot only after ranking
