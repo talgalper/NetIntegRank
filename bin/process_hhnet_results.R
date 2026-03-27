@@ -400,6 +400,20 @@ metrics_table <- function(g, node_id_type, cache_path) {
 
   df$description <- ifelse(is.na(df$description), NA_character_, trimws(df$description))
 
+  # When node_id_type is external_gene_name, ensembl_gene_id is a best-effort
+  # annotation from biomaRt - NAs are acceptable and should not block the pipeline.
+  # Log a warning so the user knows which genes could not be mapped.
+  if (node_id_type == "external_gene_name") {
+    missing_ensg <- is.na(df$ensembl_gene_id) | trimws(as.character(df$ensembl_gene_id)) == ""
+    if (any(missing_ensg)) {
+      message(sprintf(
+        "NOTE: %d gene(s) could not be mapped to an Ensembl ID and will have NA in ensembl_gene_id: %s",
+        sum(missing_ensg),
+        paste(df$external_gene_name[missing_ensg], collapse = ", ")
+      ))
+    }
+  }
+
   out <- df[, c("ensembl_gene_id","external_gene_name","description","gene_biotype",
                "degree","betweenness","closeness","eigen_centrality","page_rank",
                "cluster","source")]
