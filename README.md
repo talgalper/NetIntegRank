@@ -498,6 +498,7 @@ This repository uses **nf-test**.
 ### Full pipeline smoke test
 
 If your repository includes `tests/main.nf.test`, run:
+> Use this for a quick check before committing: it runs a stub smoke test and one real end-to-end run, and compares the outputs against the stored snapshot.
 
 ```bash
 nf-test test tests/main.nf.test --profile conda --verbose
@@ -519,6 +520,7 @@ nf-test test tests/modules/local/ranking.nf.test --profile conda --verbose
 ### Running all tests
 
 If your repository is organised with the standard `tests/` layout, you can run all tests with:
+> Use this after changing a single stage: it runs the full pipeline test above plus the three module tests, so it takes noticeably longer.
 
 ```bash
 nf-test test tests --profile conda --verbose
