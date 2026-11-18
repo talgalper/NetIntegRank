@@ -8,6 +8,10 @@ This repository reflects the workflow developed during my PhD. The broader proje
 
 ---
 
+**Current version: 2.0.** Rankings from 2.0 are not byte identical to rankings from the original version, 1.0 (March 2026), and 2.0 ships updated reference data. See [Version history](#version-history) at the end of this README for what changed.
+
+---
+
 ## Overview
 
 NetIntegRank currently runs three main stages:
@@ -26,7 +30,7 @@ NetIntegRank currently runs three main stages:
    - appends ML scores and citation counts
    - outputs ranked, incomplete, and filtered result tables
 
-By default, **ML scores and citation counts are appended to the final outputs but are not used in the rank calculation unless explicitly included in `--ranking_features`**.
+By default, **ML scores and citation counts are appended to the final outputs but are not used in the rank calculation**. Citation counts can be added to the ranking through `--ranking_features` (as `counts` or `counts_norm`); ML scores cannot, because they are joined after the ranking is calculated.
 
 ---
 
@@ -48,9 +52,9 @@ Provided Conda environments:
 ### Core software
 
 - **Java 17 or newer**
-- **Nextflow**
+- **Nextflow** (version 2.0 of the pipeline is tested on Nextflow 26.10.5)
 - **Conda / Miniconda**
-- **nf-test** (for testing)
+- **nf-test** (for testing; version 2.0 of the pipeline is tested with nf-test 0.9.5)
 
 ### Platform
 
@@ -127,7 +131,7 @@ nf-test version
 
 ### 6) Ensure scripts in `bin/` are executable
 
-This repository relies on helper scripts in `bin/`. In particular, `run_hhnet.sh` is called directly from the workflow, so missing executable permissions can cause task failures.
+This repository relies on helper scripts in `bin/`. All three (`run_hhnet.sh`, `process_hhnet_results.R` and `run_ranking.R`) are called directly by name from the workflow, so missing executable permissions cause task failures.
 
 A safe approach is to mark all scripts in `bin/` as executable:
 
@@ -138,7 +142,7 @@ find bin -type f \( -name "*.sh" -o -name "*.R" -o -name "*.py" \) -exec chmod +
 At minimum, ensure:
 
 ```bash
-chmod +x bin/run_hhnet.sh
+chmod +x bin/run_hhnet.sh bin/process_hhnet_results.R bin/run_ranking.R
 ```
 
 ---
@@ -185,7 +189,7 @@ The params can be run in command line as well if you want to do your own scripti
     --outdir results_example \
     --scores example/logFC_scores_abs.tsv \
     --ppi_network assets/STRING_physical_ENSG.csv \
-    --druggability assets/druggability_scores_annot2.0.csv \
+    --druggability assets/druggability_scores_annot.csv \
     --ml_scores assets/ML_data.csv \
     --citations assets/PubTator3_counts.csv \
     --hhnet_run_id example_run \
@@ -208,10 +212,12 @@ Be sure to test the pipeline before your first run. Jump to the [testing section
 The pipeline currently expects the following required inputs:
 
 * `--scores`
-* `--ppi_network` (human STRING PPI I used provided)
+* `--ppi_network` (provided: human STRING PPI)
 * `--druggability` (provided)
 * `--ml_scores` (provided)
 * `--citations` (provided)
+
+The provided files are in `assets/` and are described under [Bundled reference data](#bundled-reference-data).
 
 Optional inputs include:
 
@@ -221,6 +227,75 @@ Optional inputs include:
 * `--hhnet_dir`
 
 > feel free to update these datasets with more recent versions if you would like.
+
+---
+
+## Bundled reference data
+
+The files in `assets/` are the human reference datasets used in my PhD, and they are the defaults in the [parameter file](params/example_default.yaml). Version 2.0 updated the PPI network, the druggability scores and the citation counts. The files that shipped with 1.0 are kept in `assets/legacy_data/` (see [Legacy data](#legacy-data)). The scripts that download and build these files are in [`data_scripts/`](data_scripts/README.md).
+
+| File | Contents | Source |
+|---|---|---|
+| `STRING_physical_ENSG.csv`, `STRING_physical_geneSymbol.csv` | Physical protein-protein interactions: 430,638 interactions between 17,828 genes, as Ensembl gene IDs or as gene symbols | STRING v12.5 |
+| `druggability_scores_annot.csv` | One structure-based druggability score per protein: 19,682 proteins, 18,913 gene names | AlphaFold DB v6 and SWISS-MODEL Repository structures, scored with fpocket and PocketMiner; gene names from Ensembl 116 |
+| `PubTator3_counts.csv` | Number of PubMed articles that mention each gene: 24,507 genes | PubTator3; gene names from Ensembl 116 |
+| `ML_data.csv` | Machine-learning target scores (`Prediction_Score_rf`) and the features behind them | Unchanged from 1.0 |
+
+### STRING PPI network
+
+* Built from STRING v12.5 `9606.protein.physical.links.full.v12.5.txt.gz` (physical interactions only), downloaded in November 2026 from https://string-db.org/cgi/download.
+* Interactions with a `combined_score` of at least 400 are kept, and the score is stored divided by 1000 (0.4 to 0.999), as in 1.0.
+* STRING protein IDs are mapped to Ensembl gene IDs through STRING's protein aliases (source `Ensembl_gene`) and to gene symbols through STRING's protein info file. STRING 12.5 reuses the 12.0 versions of both files.
+* Each interaction is listed once.
+* The gene-symbol file uses STRING's own gene names, which date from 2023 and differ from current names for some genes (for example `G6PC`, now `G6PC1`). The druggability and citation tables use Ensembl 116 names, so a renamed gene finds no match when the symbol file is the network. The Ensembl ID file avoids this, because the pipeline names its genes from Ensembl 116.
+
+### Druggability scores
+
+`druggability_scores_annot.csv` gives each human protein a structure-based druggability score, `drug_score`, between 0 and 1.
+
+* **Structures.** AlphaFold DB v6 models of the human reference proteome (UP000005640, https://alphafold.ebi.ac.uk), and for each protein the SWISS-MODEL Repository model (https://swissmodel.expasy.org/repository, models of release 2026-09.1) with a sequence identity of at least 60% and the best QMEANDisCo global score. AlphaFold DB provides proteins longer than 2,700 residues as overlapping fragments, and each fragment is scored on its own.
+* **Filters.** Models with low overall confidence (mean pLDDT below 50 for AlphaFold, mean QMEANDisCo below 0.5 for SWISS-MODEL) and models shorter than 80 residues are not scored.
+* **Confident regions only.** Per-residue confidence (AlphaFold pLDDT, or the SWISS-MODEL QMEANDisCo local score multiplied by 100, so both are on a 0 to 100 scale) is used to ignore pockets in poorly modelled regions. A pocket or window counts only if its mean confidence is at least 70.
+* **`FP_score`:** fpocket 4.2.3 (default settings) druggability of the best pocket whose lining residues pass the confidence rule.
+* **`CP_score`:** PocketMiner cryptic-pocket score (Meller et al. 2023, *Nature Communications* 14:1177; code and model from the authors' repository, https://github.com/Mickdub/gvp, commit `187062d`). Each residue's prediction is averaged with the 10 residues on either side, and the highest average among windows that pass the confidence rule is kept.
+* **`drug_score`** is the higher of the protein's best `FP_score` and best `CP_score` across its AlphaFold fragments and its SWISS-MODEL model.
+* Proteins with no usable score have `drug_score` 0, so their genes are still ranked (577 proteins: mostly proteins whose only structures are under 80 residues, and proteins with no pocket or window in a confident region). Proteins whose structures all fail the overall-confidence filter are not in the table. Their genes have no `drug_score`, so they are reported in `final_ranked_incomplete.tsv` instead of being ranked.
+* Gene names, descriptions and biotypes come from Ensembl 116, the release the pipeline names its genes with. There is one row per protein and gene name, and the pipeline keeps the highest `drug_score` per gene name.
+
+| Column | Contents |
+|---|---|
+| `uniprot_id` | UniProt accession |
+| `external_gene_name` | Ensembl 116 gene name; empty or `NA` where Ensembl has no match (such rows cannot join to the pipeline's genes) |
+| `description`, `gene_biotype` | Ensembl 116 gene description and biotype |
+| `FP_score` | Best fpocket druggability among confident pockets; 0 if none |
+| `FP_source` | Structure that gave `FP_score`: `AF` (AlphaFold DB) or `SM` (SWISS-MODEL) |
+| `FP_struct_score` | Overall confidence of that structure, 0 to 100 |
+| `CP_score` | Best PocketMiner score among confident windows; 0 if none |
+| `CP_source` | Structure that gave `CP_score`: `AF` or `SM` |
+| `drug_score` | The higher of `FP_score` and `CP_score` |
+| `drug_score_tool` | Tool that gave `drug_score`: `fpocket` or `PocketMiner` (fpocket on a tie); empty if no score |
+| `drug_score_source` | Structure that gave `drug_score`: `AF` or `SM` (AlphaFold on a tie) |
+
+### Citation counts
+
+* `counts` is the number of distinct PubMed articles in which PubTator3 found a mention of the gene. Every article counts, whatever its topic.
+* Built from PubTator3's gene annotations (`gene2pubtator3.gz`, downloaded on 13 November 2026 from https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/). Mentions that PubTator links to more than one gene are left out.
+* PubTator3 identifies genes by NCBI gene ID. These are named through Ensembl 116, so only human genes are kept, under the same gene names the pipeline uses. Where Ensembl links one NCBI gene to several genes (mostly near-identical paralogs), the gene that carries NCBI's own symbol is used.
+* Columns: `symbol`, `counts`.
+
+### ML scores
+
+`ML_data.csv` is unchanged from 1.0. It was built in 2024 from the data available then (including STRING 12.0 network metrics) and has not been rebuilt for 2.0.
+
+### Legacy data
+
+`assets/legacy_data/` holds the reference files that 1.0 shipped with, so that 1.0 results can be reproduced. Pass one explicitly to use it, for example `--druggability assets/legacy_data/druggability_scores_annot2.0.csv`.
+
+| File | Contents |
+|---|---|
+| `STRING_physical_ENSG_v12.0.csv`, `STRING_physical_geneSymbol_v12.0.csv` | STRING v12.0 physical network, combined score of at least 400 |
+| `druggability_scores_annot2.0.csv` | The 1.0 druggability table, from AlphaFold DB v4 and 2024 SWISS-MODEL structures |
+| `PubTator3_counts_2024-12.csv` | The 1.0 citation counts, from PubTator3 as downloaded in December 2024 |
 
 ---
 
@@ -275,10 +350,10 @@ The HHNet wrapper is expected to:
 
 Required columns:
 
-* `uniprot_gn_id`
-* `drug_score`
+* `external_gene_name`
+* `drug_score` (numeric, no missing values)
 
-These scores represent structural druggability estimates derived from pocket-detection workflows from Fpocket and PocketMiner.
+Scores are joined to genes by name, keeping the highest `drug_score` per gene name. Genes with no `drug_score` are not ranked; they are reported in `final_ranked_incomplete.tsv`. Other columns are ignored. The bundled table is described under [Druggability scores](#druggability-scores).
 
 ---
 
@@ -286,10 +361,10 @@ These scores represent structural druggability estimates derived from pocket-det
 
 Required columns:
 
-* `uniprot_gn_id`
+* `Protein` (UniProt accession)
 * `Prediction_Score_rf`
 
-These scores are appended to the final output and are **not used for ranking unless included in `--ranking_features`**.
+These scores are joined by UniProt accession after the ranking is calculated, so they are appended to the final output only and **cannot be used in `--ranking_features`**.
 
 ---
 
@@ -297,16 +372,16 @@ These scores are appended to the final output and are **not used for ranking unl
 
 Required columns:
 
-* `external_gene_name`
+* `symbol` (gene name)
 * `counts`
 
-These counts are appended to the final output and are **not used for ranking unless included in `--ranking_features`**.
+Counts are summed per symbol and joined to genes by name. They are appended to the final output and are **not used for ranking unless included in `--ranking_features`** (as `counts`, or as `counts_norm`, which is log10 of the count). The bundled counts are described under [Citation counts](#citation-counts).
 
 ---
 
 ### 6) Optional gene mapping (`--gene_map`)
 
-Optional TSV/CSV used to map Ensembl IDs to UniProt IDs and gene symbols, reducing or avoiding repeated annotation lookups (via biomaRt).
+Optional TSV/CSV used to map Ensembl IDs to UniProt IDs and gene symbols, reducing or avoiding repeated annotation lookups (via Ensembl BioMart).
 
 Recommended columns:
 
@@ -317,7 +392,9 @@ Useful additional column:
 
 * `external_gene_name`
 
-If `--gene_map` is not provided, the ranking stage attempts to reuse an annotation cache before falling back to online annotation lookup via Ensembl (biomaRt).
+If `--gene_map` is not provided, the ranking stage attempts to reuse an annotation cache before falling back to online annotation lookup via Ensembl BioMart.
+
+**Note on the BioMart lookup.** Ensembl 116 (June 2026) is the last Ensembl release that includes BioMart, and it is served from the Ensembl archive site (`jun2026.archive.ensembl.org`). The pipeline queries that BioMart service directly over HTTPS rather than through the `biomaRt` R package, because the `biomaRt` versions available through conda can no longer connect to it. Gene names, descriptions, biotypes and UniProt IDs therefore reflect Ensembl 116. Both the HHNet post-processing stage and the ranking stage use this lookup, and it needs internet access unless every gene is already in the annotation cache (or, for the ranking stage, `--gene_map` is supplied).
 
 ---
 
@@ -455,6 +532,8 @@ Key outputs include:
 * network artefacts generated by the post-processing script (images + graphml files)
 * `id_annot_cache.tsv`
 
+In both metrics tables, `betweenness`, `closeness`, `eigen_centrality` and `page_rank` are rounded to 10 decimal places. Digits beyond that are floating-point noise that varies with the version of the numerical libraries Conda installs. Rounding removes it, so the tables and the ranking built on them are not affected (checked across OpenBLAS 0.3.30 and 0.3.34).
+
 ---
 
 ### 3) Ranking outputs
@@ -478,7 +557,7 @@ Main outputs:
 ### Output interpretation
 
 * `final_ranked.tsv`
-  Final ranked table for complete cases included in ranking.
+  Final ranked table for complete cases included in ranking. Genes are ranked once for every combination of feature weights (rank 1 is best); `avg_rank` is a gene's mean rank across those combinations and `rank_variance` is the variance of its ranks. Under any one combination, genes with equal scores share the average of the ranks they span, so genes with identical ranking features receive the same `avg_rank`. Rows are sorted by `avg_rank`, then by gene name.
 
 * `final_ranked_incomplete.tsv`
   Rows retained for reporting but excluded from complete ranking because one or more required ranking fields were missing (e.g. `drug_score`).
@@ -553,7 +632,10 @@ This is expected and can be useful when re-running the pipeline. You may experie
 
 ### Internet access
 
-If `--gene_map` is not provided and no suitable annotation cache exists, the ranking stage may need internet access for annotation retrieval.
+Two stages look up gene annotation online (see the note under "Optional gene mapping"):
+
+* **HHNet post-processing** queries Ensembl BioMart on every run that is not resumed from Nextflow's cache, so it needs internet access.
+* **Ranking** needs internet access unless `--gene_map` is provided or its annotation cache already covers every gene.
 
 ### Caching
 
@@ -573,6 +655,44 @@ params.hhnet_intermediate_cache_dir = "${projectDir}/cache/hhnet_intermediates"
 ```
 
 Add `cache/` to `.gitignore` to keep it out of version control.
+
+---
+
+## Version history
+
+Key changes between versions, newest first.
+
+### 2.0 (November 2026)
+
+The first update to the original version. **Rankings from 2.0 are not byte identical to rankings from 1.0.**
+
+* **Gene annotation queries Ensembl BioMart directly.**
+  Ensembl 116 (June 2026) is the last Ensembl release that includes BioMart, and the `biomaRt` R package versions available through Conda can no longer connect to it. Both R stages now send their queries straight to the Ensembl 116 archive over HTTPS, and the R environment installs `httr` instead of `biomaRt`. Gene names, descriptions, biotypes and UniProt IDs are therefore fixed at Ensembl 116. See the note under "Optional gene mapping" above.
+
+* **Network metrics are rounded to 10 decimal places.**
+  In 1.0, `betweenness`, `closeness`, `eigen_centrality` and `page_rank` were written at full floating-point precision. Their last digits changed with the version of the linear algebra library (OpenBLAS) that Conda happened to install, and that was enough to change the ranking from one installation to the next. With rounding, the OpenBLAS versions installed in March and in November 2026 (0.3.30 and 0.3.34) give identical metrics tables and an identical ranking from the same inputs.
+
+* **Tied genes share a rank.**
+  Under each combination of feature weights, genes with equal scores now receive the average of the ranks they span. In 1.0 they were ranked in the order they appeared in the metrics table, which follows the row order of the PPI file. `final_ranked.tsv` is now sorted by `avg_rank`, then by gene name.
+
+* **Updated for Nextflow 26.10.**
+  The workflow now uses the current `channel.fromPath` spelling in place of the deprecated `Channel.fromPath`, and the two R scripts are called by name from `bin/` in the same way as `run_hhnet.sh`, so they must be executable (see Installation, step 6). `nextflow lint` reports no errors or warnings. The full test suite passes on Nextflow 26.10.5 with nf-test 0.9.5, with outputs identical to those from Nextflow 26.04.6.
+
+* **Updated reference data.** The new files are described under [Bundled reference data](#bundled-reference-data); the files that shipped with 1.0 are kept in `assets/legacy_data/` (see [Legacy data](#legacy-data)).
+  * *PPI network:* STRING 12.0 to 12.5, at the same cut-off (combined score of at least 400). Each interaction is now listed once.
+  * *Druggability:* rebuilt from new structures (AlphaFold DB v4 to v6, SWISS-MODEL Repository 2024 to 2026), with fpocket and PocketMiner run again on every structure. Pockets and windows now count only in confidently modelled regions, and the 80-residue minimum applies to both tools. Gene names come from Ensembl 116, the release the pipeline names its genes with. The file is renamed `druggability_scores_annot.csv` (was `druggability_scores_annot2.0.csv`) and columns are renamed: `uniprot_gn_id` to `uniprot_id`, `Fpocket_method` to `FP_source`, `struct_score` to `FP_struct_score`, `PocketMiner_method` to `CP_source` and `source` to `drug_score_source`; `drug_score_tool` is new. The pipeline reads only `external_gene_name` and `drug_score`.
+  * *Citation counts:* regenerated from PubTator3 as downloaded on 13 November 2026. Every article is counted, for human genes only, named from Ensembl 116.
+  * *ML scores:* unchanged.
+
+* **Scripts for the reference data.** The scripts that download and build the PPI network, druggability and citation files are in `data_scripts/`, with instructions in its README.
+
+* **Input formats corrected.** The input-format section now lists the columns the pipeline actually requires, and says that ML scores cannot be used as a ranking feature.
+
+* **The test snapshot was re-recorded** to match the new outputs.
+
+### 1.0 (March 2026)
+
+The original version: HHNet clustering, post-processing into network metrics, and integrated evidence ranking, run through Nextflow with Conda. Gene annotation used the `biomaRt` R package against the live Ensembl BioMart service.
 
 ---
 
