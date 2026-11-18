@@ -19,9 +19,28 @@ results/
 
 # Editor
 .vscode/
+*.Rproj
 
 # Python / R / misc
 __pycache__/
 .Rhistory
 .RData
 .Rproj.user
+
+# HHNet outputs and caches, written inside the vendored tool by every run (tests included)
+bin/hierarchical-hotnet/cache/
+bin/hierarchical-hotnet/runs/
+bin/hierarchical-hotnet/data/
+bin/hierarchical-hotnet/intermediate/
+bin/hierarchical-hotnet/**/fortran_module*.so
+
+# data_scripts: downloads, structures and tool outputs, written next to the scripts when run with default paths
+data_scripts/STRING_data/
+data_scripts/citation_data/
+data_scripts/druggability/alphafold/
+data_scripts/druggability/swissmodel/
+data_scripts/druggability/fpocket-*/
+data_scripts/druggability/combined/
+data_scripts/druggability/annotated/
+data_scripts/druggability/package/
+Rplots.pdf
