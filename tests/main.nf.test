@@ -11,7 +11,7 @@ nextflow_pipeline {
                 outdir = "${projectDir}/tests/results/full_stub"
                 scores = "${projectDir}/tests/fixtures/DE_test.csv"
                 ppi_network = "${projectDir}/tests/fixtures/PPI_test.csv"
-                druggability = "${projectDir}/assets/druggability_scores_annot2.0.csv"
+                druggability = "${projectDir}/assets/druggability_scores_annot.csv"
                 ml_scores = "${projectDir}/assets/ML_data.csv"
                 citations = "${projectDir}/assets/PubTator3_counts.csv"
                 gene_map = null
@@ -55,7 +55,7 @@ nextflow_pipeline {
                 outdir = "${projectDir}/tests/results/full_real"
                 scores = "${projectDir}/tests/fixtures/DE_test.csv"
                 ppi_network = "${projectDir}/tests/fixtures/PPI_test.csv"
-                druggability = "${projectDir}/assets/druggability_scores_annot2.0.csv"
+                druggability = "${projectDir}/assets/druggability_scores_annot.csv"
                 ml_scores = "${projectDir}/assets/ML_data.csv"
                 citations = "${projectDir}/assets/PubTator3_counts.csv"
                 gene_map = null

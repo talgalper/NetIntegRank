@@ -22,7 +22,7 @@ nextflow_process {
                 """
                 input[0] = file("${projectDir}/tests/results/hhnet_processing/hhnet_subnet_metrics.tsv")
                 input[1] = file("${projectDir}/tests/results/hhnet_processing/hhnet_neighbour_metrics.tsv")
-                input[2] = file("${projectDir}/assets/druggability_scores_annot2.0.csv")
+                input[2] = file("${projectDir}/assets/druggability_scores_annot.csv")
                 input[3] = file("${projectDir}/assets/ML_data.csv")
                 input[4] = file("${projectDir}/assets/PubTator3_counts.csv")
                 """
