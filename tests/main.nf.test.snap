@@ -2,14 +2,14 @@
     "core_outputs": {
         "content": [
             "clusters_string_phys_logfc_abs.tsv:md5,4f3e79d99933f409211574951aa557ba",
-            "hhnet_subnet_metrics.tsv:md5,1be7bd638e508e8cfb4fc0c0351e0ed6",
-            "hhnet_neighbour_metrics.tsv:md5,8e7dbd1fa4a8f0a48753b66b2362c100",
-            "final_ranked.tsv:md5,622b7a9424bb3f186aa831fe562870ef"
+            "hhnet_subnet_metrics.tsv:md5,a12d94e8cf4df88eb0489e6b44093bbe",
+            "hhnet_neighbour_metrics.tsv:md5,e6b05e9ed4d6dc8aab59252eea9e9a13",
+            "final_ranked.tsv:md5,ca5ca2c2b5246b5c0c2222ad226770fb"
         ],
-        "timestamp": "2026-03-10T16:22:01.241834",
+        "timestamp": "2026-11-12T17:26:50.937962",
         "meta": {
             "nf-test": "0.9.4",
-            "nextflow": "25.10.4"
+            "nextflow": "26.04.6"
         }
     }
 }

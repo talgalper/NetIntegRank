@@ -6,4 +6,4 @@ dependencies:
   - r-base=4.3
   - r-optparse
   - r-igraph
-  - bioconductor-biomart
+  - r-httr

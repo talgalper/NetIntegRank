@@ -52,7 +52,7 @@ process RANKING {
     """
     mkdir -p "\$(dirname '${cachePath}')"
 
-    Rscript ${projectDir}/bin/run_ranking.R \
+    run_ranking.R \
       --hhnet_metrics ${hhnet_metrics} \
       --druggability ${druggability} \
       --ml_scores ${ml_scores} \

@@ -29,7 +29,7 @@ option_list <- list(
   make_option("--out_rds", type = "character",
               help = "Output RDS path for final ranking."),
   make_option("--id_annot_cache", type = "character", default = NULL,
-              help = "Optional cache path for biomaRt ID annotations."),
+              help = "Optional cache path for BioMart ID annotations."),
   make_option("--out_incomplete_tsv", type = "character", default = NULL,
               help = "Optional output TSV path for rows removed before ranking."),
   make_option("--out_incomplete_rds", type = "character", default = NULL,
@@ -228,6 +228,76 @@ upsert_annotation_cache <- function(cache_path, input_type, annotation_df) {
   cache_df
 }
 
+# Ensembl 116 (June 2026) is the last Ensembl release that includes BioMart, and it is only served
+# from the archive site. The biomaRt package versions available through conda cannot reach it, so
+# the query is sent to the BioMart web service directly. Returns one character column per
+# attribute, with "" where BioMart has no value (the table biomaRt::getBM() used to return).
+BIOMART_URL <- "https://jun2026.archive.ensembl.org/biomart/martservice"
+
+query_biomart <- function(attributes, filter_name, values,
+                          dataset = "hsapiens_gene_ensembl", url = BIOMART_URL, batch_size = 500) {
+  if (!requireNamespace("httr", quietly = TRUE)) {
+    stop("Package 'httr' is required for the BioMart lookup when --gene_map is not supplied and cache is incomplete.",
+         call. = FALSE)
+  }
+
+  xml_escape <- function(x) {
+    x <- gsub("&", "&amp;", x, fixed = TRUE)
+    x <- gsub("<", "&lt;", x, fixed = TRUE)
+    x <- gsub(">", "&gt;", x, fixed = TRUE)
+    gsub("\"", "&quot;", x, fixed = TRUE)
+  }
+
+  empty <- as.data.frame(matrix(character(0), nrow = 0, ncol = length(attributes)),
+                         stringsAsFactors = FALSE)
+  colnames(empty) <- attributes
+
+  values <- unique(as.character(values))
+  if (length(values) == 0) return(empty)
+  batches <- split(values, ceiling(seq_along(values) / batch_size))
+
+  results <- lapply(batches, function(batch) {
+    query <- paste0(
+      "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE Query>",
+      "<Query virtualSchemaName=\"default\" formatter=\"TSV\" header=\"0\" uniqueRows=\"1\" count=\"\" ",
+      "datasetConfigVersion=\"0.6\" completionStamp=\"1\">",
+      "<Dataset name=\"", dataset, "\" interface=\"default\">",
+      "<Filter name=\"", filter_name, "\" value=\"", paste(xml_escape(batch), collapse = ","), "\"/>",
+      paste0("<Attribute name=\"", attributes, "\"/>", collapse = ""),
+      "</Dataset></Query>"
+    )
+
+    resp <- tryCatch(
+      httr::RETRY("POST", url, body = list(query = query), encode = "form",
+                  httr::timeout(300), times = 3, pause_base = 5, quiet = TRUE),
+      error = function(e) {
+        stop(sprintf("BioMart request to %s failed: %s", url, conditionMessage(e)), call. = FALSE)
+      }
+    )
+    body <- httr::content(resp, as = "text", encoding = "UTF-8")
+    lines <- strsplit(body, "\r?\n")[[1]]
+    lines <- lines[nzchar(lines)]
+
+    # completionStamp="1" makes BioMart end a complete reply with "[success]". Anything else is an
+    # HTTP error, a BioMart "Query ERROR" message or a reply that was cut off.
+    complete <- length(lines) > 0 && identical(lines[length(lines)], "[success]")
+    if (httr::http_error(resp) || !complete) {
+      stop(sprintf("BioMart query to %s failed (HTTP %s). Reply began: %s",
+                   url, httr::status_code(resp), substr(body, 1, 300)), call. = FALSE)
+    }
+
+    lines <- lines[-length(lines)]
+    if (length(lines) == 0) return(empty)
+    read.table(text = paste(lines, collapse = "\n"), sep = "\t", header = FALSE, quote = "",
+               comment.char = "", col.names = attributes, colClasses = "character",
+               na.strings = character(0), check.names = FALSE, stringsAsFactors = FALSE)
+  })
+
+  out <- do.call(rbind, results)
+  rownames(out) <- NULL
+  out
+}
+
 id_annot <- function(data, input_type = "external_gene_name", cache_path = NULL) {
   if (!input_type %in% colnames(data)) {
     stop(sprintf("id_annot input column '%s' not found in data.", input_type), call. = FALSE)
@@ -253,17 +323,10 @@ id_annot <- function(data, input_type = "external_gene_name", cache_path = NULL)
 
   fetched <- data.frame()
   if (length(missing_keys) > 0) {
-    if (!requireNamespace("biomaRt", quietly = TRUE)) {
-      stop("Package 'biomaRt' is required when --gene_map is not supplied and cache is incomplete.",
-           call. = FALSE)
-    }
-
-    ensembl <- biomaRt::useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
-    bm <- biomaRt::getBM(
+    bm <- query_biomart(
       attributes = c(input_type, "uniprotswissprot", "uniprot_gn_id"),
-      filters = input_type,
-      values = missing_keys,
-      mart = ensembl
+      filter_name = input_type,
+      values = missing_keys
     )
 
     fetched <- data.frame(
@@ -309,6 +372,12 @@ id_annot <- function(data, input_type = "external_gene_name", cache_path = NULL)
   left_join_first(data, annot, by_x = input_type, by_y = input_type, cols_y = "uniprot_gn_id")
 }
 
+# Best avg_rank first. Genes with the same avg_rank are listed by gene name, then Ensembl ID, so the
+# row order of the output is fixed. method = "radix" sorts text the same way in every locale.
+sort_by_avg_rank <- function(df) {
+  df[order(df$avg_rank, df$external_gene_name, df$ensembl_gene_id, method = "radix"), , drop = FALSE]
+}
+
 avg_rank_sensitivity <- function(input_data, features, negative_features = character(0), step = 0.1) {
   feature_names <- names(features)
   weight_names <- paste0(feature_names, "_w")
@@ -340,10 +409,9 @@ avg_rank_sensitivity <- function(input_data, features, negative_features = chara
         sign_factor * current_weights[[weight_col]] * input_data[[features[[feature]]]]
     }
 
-    order_idx <- order(combined_score, decreasing = TRUE)
-    ranks <- integer(num_genes)
-    ranks[order_idx] <- seq_along(combined_score)
-    rank_matrix[, i] <- ranks
+    # Rank 1 is the highest score. Genes with equal scores share the average of the ranks they span,
+    # so their position does not depend on the row order of the input table.
+    rank_matrix[, i] <- rank(-combined_score, ties.method = "average")
   }
 
   out <- data.frame(
@@ -354,7 +422,7 @@ avg_rank_sensitivity <- function(input_data, features, negative_features = chara
     stringsAsFactors = FALSE
   )
 
-  out[order(out$avg_rank), , drop = FALSE]
+  sort_by_avg_rank(out)
 }
 
 ranking_features <- trimws(strsplit(args$ranking_features, ",", fixed = TRUE)[[1]])
@@ -575,7 +643,7 @@ RS_data <- left_join_first(RS_data, ml_scores,
 RS_data <- RS_data[, c("external_gene_name", "ensembl_gene_id", "uniprot_gn_id",
                        "avg_rank", "rank_variance", "counts", "Prediction_Score_rf"),
                    drop = FALSE]
-RS_data <- RS_data[order(RS_data$avg_rank), , drop = FALSE]
+RS_data <- sort_by_avg_rank(RS_data)
 rownames(RS_data) <- NULL
 
 out_dirs <- unique(dirname(c(

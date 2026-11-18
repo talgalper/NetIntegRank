@@ -12,11 +12,11 @@ workflow {
   if( !params.ml_scores )     error "Missing required --ml_scores"
   if( !params.citations )     error "Missing required --citations"
 
-  def scores_ch = Channel.fromPath(params.scores, checkIfExists: true)
-  def ppi_ch    = Channel.fromPath(params.ppi_network, checkIfExists: true)
-  def drug_ch   = Channel.fromPath(params.druggability, checkIfExists: true)
-  def ml_ch     = Channel.fromPath(params.ml_scores, checkIfExists: true)
-  def cit_ch    = Channel.fromPath(params.citations, checkIfExists: true)
+  def scores_ch = channel.fromPath(params.scores, checkIfExists: true)
+  def ppi_ch    = channel.fromPath(params.ppi_network, checkIfExists: true)
+  def drug_ch   = channel.fromPath(params.druggability, checkIfExists: true)
+  def ml_ch     = channel.fromPath(params.ml_scores, checkIfExists: true)
+  def cit_ch    = channel.fromPath(params.citations, checkIfExists: true)
 
   def hhnet_out = HHNET(scores_ch, ppi_ch)
 

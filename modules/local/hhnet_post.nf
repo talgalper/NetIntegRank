@@ -16,7 +16,7 @@ process HHNET_POST {
     """
     mkdir -p hhnet_processing
 
-    Rscript ${projectDir}/bin/process_hhnet_results.R \
+    process_hhnet_results.R \
       --hhnet_clusters ${hhnet_clusters} \
       --ppi ${ppi_edge_list} \
       --outdir hhnet_processing \
