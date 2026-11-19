@@ -4,12 +4,12 @@
             "clusters_string_phys_logfc_abs.tsv:md5,4f3e79d99933f409211574951aa557ba",
             "hhnet_subnet_metrics.tsv:md5,a12d94e8cf4df88eb0489e6b44093bbe",
             "hhnet_neighbour_metrics.tsv:md5,e6b05e9ed4d6dc8aab59252eea9e9a13",
-            "final_ranked.tsv:md5,ca5ca2c2b5246b5c0c2222ad226770fb"
+            "final_ranked.tsv:md5,71441f3b8c5574ecdcd06d58ce7ecd71"
         ],
-        "timestamp": "2026-11-12T17:26:50.937962",
+        "timestamp": "2026-11-19T10:00:15.128299041",
         "meta": {
-            "nf-test": "0.9.4",
-            "nextflow": "26.04.6"
+            "nf-test": "0.9.5",
+            "nextflow": "25.10.4"
         }
     }
 }

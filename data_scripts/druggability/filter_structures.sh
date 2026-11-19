@@ -6,10 +6,11 @@
 #
 # options: -i  raw structures dir (default: <this dir>/<source>/structures_raw)
 #          -o  filtered dir       (default: <this dir>/<source>/structures_filtered)
+#          -c  minimum whole-model confidence (default: MIN_STRUCT_CONF_AF or MIN_STRUCT_CONF_SM below)
 #          -t  threads            (default: all CPUs)
 #
-# Step 1 of the druggability scoring. Picks the structures that are confident enough to score and
-# writes them to <filtered dir>/pdb/, which both Fpocket_master.sh and pocketminer_master.sh read.
+# Step 1 of the druggability scoring. Scores each structure's overall confidence and writes the structures
+# to score to <filtered dir>/pdb/, which both Fpocket_master.sh and pocketminer_master.sh read.
 # Running it again rebuilds the filtered set from scratch. Raw structure files are never moved or changed.
 
 
@@ -18,17 +19,23 @@
 if [ -z "${BASH_VERSION:-}" ]; then echo "Run with bash, not sh"; exit 1; fi
 set -euo pipefail
 
+## whole-model confidence filter: a structure is scored only if the mean confidence of all its atoms is at
+## least this. The default 0 keeps every readable structure, because the scoring steps already leave out
+## pockets and windows in low-confidence regions (MIN_CONF in Fpocket_master.sh and pocketminer_master.sh).
+MIN_STRUCT_CONF_AF=0     # mean pLDDT, 0-100 scale
+MIN_STRUCT_CONF_SM=0     # mean QMEANDisCo local score, 0-1 scale
+
 usage() {
-  echo "Usage: $0 <alphafold|swissmodel> [-i structures_dir] [-o filtered_dir] [-t threads]"
+  echo "Usage: $0 <alphafold|swissmodel> [-i structures_dir] [-o filtered_dir] [-c min_conf] [-t threads]"
 }
 
-## arguments: source sets the confidence threshold, paths and threads are optional
+## arguments: source sets the confidence scale, paths, threshold and threads are optional
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script_name="$(basename "${BASH_SOURCE[0]}")"   # this script, whatever it is called
 source_type="${1:-}"
 case "$source_type" in
-  alphafold)  min_conf=50  ;;   # mean pLDDT, 0-100 scale
-  swissmodel) min_conf=0.5 ;;   # mean QMEAN local score, 0-1 scale
+  alphafold)  min_conf="$MIN_STRUCT_CONF_AF" ;;
+  swissmodel) min_conf="$MIN_STRUCT_CONF_SM" ;;
   *) usage; exit 1 ;;
 esac
 shift
@@ -36,14 +43,16 @@ shift
 structures_dir="$script_dir/$source_type/structures_raw"
 filtered_dir="$script_dir/$source_type/structures_filtered"
 threads="$(nproc)"
-while getopts "i:o:t:" opt; do
+while getopts "i:o:c:t:" opt; do
   case "$opt" in
     i) structures_dir="$OPTARG" ;;
     o) filtered_dir="$OPTARG" ;;
+    c) min_conf="$OPTARG" ;;
     t) threads="$OPTARG" ;;
     *) usage; exit 1 ;;
   esac
 done
+if ! [[ "$min_conf" =~ ^[0-9]+([.][0-9]+)?$ ]]; then echo "-c must be a number, e.g. 50 (AlphaFold) or 0.5 (SWISS-MODEL)"; exit 1; fi
 
 ## check there are structures to filter, then set up the filtered dir
 if [ ! -d "$structures_dir" ]; then
@@ -85,9 +94,9 @@ find "$structures_dir" -maxdepth 1 -name '*.pdb' -printf '%f\0' \
 ## keep a copy of the scripts exactly as they were for this run, next to the filtered set
 cp "$script_dir/$script_name" "$script_dir/src/struct_conf.R" "$filtered_dir/scripts_as_run/"
 
-## score and filter (method unchanged from 2024): each structure's confidence is the mean of the
+## score and filter: each structure's confidence is the mean of the
 ## per-atom confidence values stored in the file (pLDDT for AlphaFold, QMEAN local for SWISS-MODEL).
-## Structures at or above the threshold go into pdb/: AlphaFold as links to the raw files, SWISS-MODEL
+## Structures at or above min_conf go into pdb/: AlphaFold as links to the raw files, SWISS-MODEL
 ## as trimmed copies (protein atoms only, first chain, no insertion codes, no header). The scores of
 ## every structure go to struct_score.csv (passed) and low_conf_struct.csv (below the threshold).
 ## Takes about a minute for the full AlphaFold set.

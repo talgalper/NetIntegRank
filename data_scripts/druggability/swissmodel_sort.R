@@ -1,4 +1,6 @@
-library(tidyverse)
+# Run from the folder that holds SWISS-MODEL_Repository/ (unpacked from 9606_coords.tar.gz and 9606_meta.tar.gz);
+# copies each protein's chosen model to structures_raw/<UniProt ID>.pdb. download_swissmodel_structures.sh runs it.
+# (Only base R and progress are used; tidyverse was loaded here before but nothing in it was used.)
 library(bio3d)
 
 # read in metadata from SWISS-MODEL download
@@ -12,15 +14,10 @@ meta_subset$uniprot_id <- sub("-\\d+$", "", meta_subset$UniProtKB_ac)
 #meta_subset <- meta_subset[!duplicated(meta_subset$uniprot_id), ]
 
 
-# function to split uniprot ID into paired chars
-split_into_pairs <- function(input_string) {
-  # Split the string into individual characters
-  chars <- strsplit(input_string, NULL)[[1]]
-  # Combine the characters into groups of two
-  pairs <- sapply(seq(1, length(chars), by = 2), function(i) {
-    paste0(chars[i], ifelse(i + 1 <= length(chars), chars[i + 1], ""))
-  })
-  return(pairs)
+# function to split uniprot ID into the three folder names SWISS-MODEL stores it under: characters 1-2, 3-4
+# and the rest, so P04637 -> P0/46/37 and A0A075B734 -> A0/A0/75B734
+split_into_folders <- function(input_string) {
+  c(substr(input_string, 1, 2), substr(input_string, 3, 4), substr(input_string, 5, nchar(input_string)))
 }
 
 # create location ID to navigate SWISSMODEL directory
@@ -31,7 +28,7 @@ pb <- progress_bar$new(
 
 loc_id <- list()
 for (string in meta_subset$uniprot_id) {
-  result <- split_into_pairs(string)
+  result <- split_into_folders(string)
   loc_id[[string]] <- result
   
   pb$tick()
