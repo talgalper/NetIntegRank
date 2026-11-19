@@ -20,7 +20,6 @@ nextflow_pipeline {
                 hhnet_score_name = "logfc_abs"
                 hhnet_num_permutations = 10
                 hhnet_compile_fortran = "never"
-                hhnet_num_cores = 2
                 hhnet_run_id = "test"
 
                 hhnet_min_cluster_size = 2
@@ -64,7 +63,6 @@ nextflow_pipeline {
                 hhnet_score_name = "logfc_abs"
                 hhnet_num_permutations = 10
                 hhnet_compile_fortran = "never"
-                hhnet_num_cores = 2
                 hhnet_run_id = "test"
 
                 hhnet_min_cluster_size = 2

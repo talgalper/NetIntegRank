@@ -16,7 +16,6 @@ nextflow_process {
                 hhnet_score_name = "logfc_abs"
                 hhnet_num_permutations = 10
                 hhnet_compile_fortran = "never"
-                hhnet_num_cores = 4
                 hhnet_run_id = "test"
             }
             process {
