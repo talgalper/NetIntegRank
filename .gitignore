@@ -27,7 +27,7 @@ __pycache__/
 .RData
 .Rproj.user
 
-# HHNet outputs and caches, written inside the vendored tool by every run (tests included)
+# HHNet outputs and caches, written inside each tool by every run (tests included)
 bin/hierarchical-hotnet/cache/
 bin/hierarchical-hotnet/runs/
 bin/hierarchical-hotnet/data/
