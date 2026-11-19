@@ -1,13 +1,12 @@
-PocketMiner code and trained model, copied unchanged from the authors' repository.
+The files in upstream/: PocketMiner code and trained model, copied unchanged from the authors' repository.
 
 paper:   Meller et al. 2023, Nature Communications 14:1177, doi 10.1038/s41467-023-36699-3
 source:  https://github.com/Mickdub/gvp (branch pocket_pred)
 commit:  187062df3c94127e991669768009141a08fd5d8b (2023-07-21, the branch head on 2026-11-17)
-copied:  2026-11-17 from /home/ubuntu/Desktop/PocketMiner (the 2024 working copy); every file below was
-         checked byte-for-byte against a fresh download of the commit above
+checked: 2026-11-17, every file below byte-for-byte against a fresh download of the commit above
 model:   models/pocketminer (TensorFlow checkpoint, loaded by its prefix, without the .index ending)
 
-bytes, SHA-256, file:
+bytes, SHA-256, file (paths inside upstream/):
     22234  d028a4de53387efac7862be7dfeed15ac9996872c580c7b8d0b7d607b1f877a6  src/models.py
      3016  877c1fa2f7fff87da9488577b8923015383ba10135bc4b38d975256072191311  src/gvp.py
      3153  5d0b576e27f3f9d331343a4bf315f8da2b5c0aca7ca0bd6b37bf8c1b2445e834  src/util.py

@@ -1,9 +1,9 @@
 ### scores structure confidence and builds the filtered structure set that fpocket and PocketMiner score ###
 # usage: Rscript struct_conf.R <alphafold|swissmodel> <structures_dir> <filtered_dir> <min_conf> <threads>
 #
-# Same scoring as the 2024 af_struct_conf.R scripts (mean B-factor of each structure).
-# SWISS-MODEL models are trimmed as in 2024 (protein ATOM records only, no insertion codes,
-# first chain only) and written out without header records; AlphaFold models go in raw, as in 2024.
+# Each structure's confidence is the mean B-factor of its atoms (pLDDT for AlphaFold, QMEAN local for SWISS-MODEL).
+# SWISS-MODEL models are trimmed (protein ATOM records only, no insertion codes, first chain only) and written out
+# without header records; AlphaFold models go in as they are, as links to the raw files.
 # Raw input files are never moved or changed.
 
 suppressPackageStartupMessages({
@@ -32,7 +32,7 @@ score_structure <- function(pdb_file) {
   pdb_df <- as.data.frame(pdb$atom)
   filename <- basename(pdb_file)
 
-  # SWISS-MODEL trimming (2024): remove non standard residues and inserts, keep first chain
+  # SWISS-MODEL trimming: remove non standard residues and inserts, keep first chain
   if (source_type == "swissmodel") {
     pdb_df <- pdb_df[pdb_df$type == "ATOM", ]
     pdb_df <- pdb_df[is.na(pdb_df$insert), ]
@@ -47,7 +47,7 @@ score_structure <- function(pdb_file) {
     file_id <- sub("\\.pdb$", "", filename)
   }
 
-  # check all atoms in each residue share one confidence value (2024 check)
+  # check all atoms in each residue share one confidence value
   resno_b_df <- subset(pdb_df, select = c("resno", "b"))
   unique_resno <- unique(resno_b_df$resno)
   b_values <- sapply(unique_resno, function(resno) unique(resno_b_df[resno_b_df$resno == resno, "b"]))
@@ -89,7 +89,7 @@ result_df  <- scores[scores$struct_score >= min_conf, ]
 removed_df <- scores[scores$struct_score <  min_conf, ]
 
 
-## warn about mixed per-atom confidence (as in 2024), then write tables
+## warn about mixed per-atom confidence, then write tables
 if (any(result_df$atom_residue == FALSE)) {
   message("Warning!: Some atoms within a single residue have varying confidence scores.
           Check struct_score.csv for these structures (look for the FALSE values).")

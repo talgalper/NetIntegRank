@@ -2,35 +2,36 @@
 #
 # usage: Rscript combine_scores.R --af-fpocket <csv[,csv]> --sm-fpocket <csv[,csv]>
 #                                 --af-pocketminer <csv[,csv]> --sm-pocketminer <csv[,csv]> --out <combined.csv>
-#                                 [--fpocket-score druggability|druggability_conf] [--pocketminer-score max_hit|max_hit_conf]
+#                                 [--fpocket-score druggability_conf|druggability] [--pocketminer-score max_hit_conf|max_hit]
 #                                 [--min-residues <n>]
+#   Inputs are the tables written by Fpocket_master.sh and pocketminer_master.sh (columns starting AF_ or SM_).
 #   Several tables per input are given comma-separated (e.g. a main table and its small_structures.csv).
-#   Reads the 2024 tables (plain column names) and the 2026 tables (AF_ / SM_ column names) alike.
-#   --min-residues: structures shorter than this are not used for scores (2026 tables only; they have residue counts).
-#   Every protein in the input tables is kept: a protein with no usable score from either tool gets highest_score 0
-#   (Tal, 2026-11-18), because NetIntegRank leaves genes without a drug_score out of its ranking altogether.
+#   --fpocket-score      fpocket column to use: druggability_conf (default, confident pockets only) or druggability
+#                        (all pockets)
+#   --pocketminer-score  PocketMiner column to use: max_hit_conf (default, confident windows only) or max_hit (all
+#                        windows)
+#   --min-residues       structures shorter than this are not used for scores (default 80; 0 uses every structure)
+#   The defaults are the settings of the bundled assets/druggability_scores_annot.csv.
 #
-# The rule, from PhD-MOC Druggability_analysis/R/plot_drug_freq.R (2024), lines 1-42:
-#   - fpocket score per protein: the highest druggability over its AlphaFold fragments and its SWISS-MODEL model
-#   - PocketMiner score (CP_score): the highest max_hit over the same
-#   - SWISS-MODEL struct_score on the 0-100 scale; missing scores are 0
-#   - highest_score = max(fpocket, PocketMiner); source = AF or SM, the structure that gave highest_score
-#     (fpocket wins a tie)
-#
-# Changes from 2024 (2026-11-18; highest_score is unchanged by them):
-#   - Each tool's best score is found first, so druggability / Fpocket_method always hold the protein's best fpocket
-#     score and CP_score / PocketMiner_method its best PocketMiner score.
-#   - A tool column says which tool gave highest_score.
-#   - A structure with no score (no confident pocket or window) is not used for the best score; the protein stays in
-#     the table with 0 for that tool.
+# The rule:
+#   - fpocket score per protein (druggability): the highest score over its AlphaFold fragments and its SWISS-MODEL
+#     model; Fpocket_method says which source gave it, struct_score is that structure's whole-model confidence
+#     (0-100)
+#   - PocketMiner score per protein (CP_score): the highest score over the same; PocketMiner_method says which source
+#   - a structure with no score (too short, or no confident pocket or window) is not used; a protein with no usable
+#     score from a tool gets 0 for that tool, so every protein in the inputs is kept (NetIntegRank leaves a gene with
+#     no drug_score out of its ranking altogether)
+#   - highest_score = the higher of the two; tool and source say which tool and which structure gave it (fpocket wins
+#     a tie between tools, AlphaFold a tie between sources)
 
 ## arguments: --name value pairs
 args <- commandArgs(trailingOnly = TRUE)
-opt <- list(fpocket_score = "druggability", pocketminer_score = "max_hit")   # defaults: scores as run
+opt <- list(fpocket_score = "druggability_conf", pocketminer_score = "max_hit_conf", min_residues = "80")
 for (i in seq(1, length(args), by = 2)) {
   opt[[gsub("-", "_", sub("^--", "", args[i]))]] <- args[i + 1]
 }
-min_residues <- if (is.null(opt$min_residues)) NA else as.integer(opt$min_residues)
+min_residues <- as.integer(opt$min_residues)
+if (is.na(min_residues)) stop("--min-residues must be a whole number")
 for (k in c("af_fpocket", "sm_fpocket", "af_pocketminer", "sm_pocketminer", "out")) {
   if (is.null(opt[[k]])) stop("missing --", gsub("_", "-", k), "; see the usage at the top of combine_scores.R")
 }
@@ -40,37 +41,32 @@ read_tables <- function(files) {
   do.call(rbind, lapply(strsplit(files, ",")[[1]], read.csv))
 }
 
-## fpocket rows: uniprot_id, score, struct_score (0-100), method
+## check a table has the columns this script reads (tables from Fpocket_master.sh / pocketminer_master.sh do)
+require_columns <- function(x, columns, files) {
+  missing <- setdiff(columns, names(x))
+  if (length(missing) > 0) stop("no ", paste(missing, collapse = ", "), " column in ", files,
+                                "; give the tables written by Fpocket_master.sh and pocketminer_master.sh")
+}
+
+## fpocket rows: uniprot_id, score, struct_score (0-100; SWISS-MODEL already x 100), method
 fpocket_rows <- function(files, source) {
   x <- read_tables(files)
   prefix <- paste0(source, "_")
-  if (paste0(prefix, "druggability") %in% names(x)) {          # 2026 tables: SWISS-MODEL struct_score already x 100
-    score <- x[[paste0(prefix, opt$fpocket_score)]]
-    struct_score <- x[[paste0(prefix, "struct_score")]]
-    if (!is.na(min_residues)) score[x[[paste0(prefix, "n_residues")]] < min_residues] <- NA   # too short: no score
-  } else {                                                     # 2024 tables
-    if (opt$fpocket_score != "druggability") stop("the 2024 fpocket tables only have druggability")
-    if (!is.na(min_residues)) stop("the 2024 fpocket tables have no residue counts, so --min-residues cannot be used")
-    score <- x$druggability
-    struct_score <- if (source == "SM") x$struct_score * 100 else x$struct_score
-  }
-  if (is.null(score)) stop("no ", opt$fpocket_score, " column in ", files)
-  data.frame(uniprot_id = x$uniprot_id, score = score, struct_score = struct_score, method = source)
+  columns <- paste0(prefix, c(opt$fpocket_score, "struct_score", "n_residues"))
+  require_columns(x, c("uniprot_id", columns), files)
+  score <- x[[columns[1]]]
+  score[x[[columns[3]]] < min_residues] <- NA                  # too short: no score
+  data.frame(uniprot_id = x$uniprot_id, score = score, struct_score = x[[columns[2]]], method = source)
 }
 
 ## PocketMiner rows: uniprot_id, score, method
 pocketminer_rows <- function(files, source) {
   x <- read_tables(files)
   prefix <- paste0(source, "_")
-  if (paste0(prefix, "max_hit") %in% names(x)) {               # 2026 tables
-    score <- x[[paste0(prefix, opt$pocketminer_score)]]
-    if (!is.na(min_residues)) score[x[[paste0(prefix, "n_residues")]] < min_residues] <- NA   # too short: no score
-  } else {                                                     # 2024 tables
-    if (opt$pocketminer_score != "max_hit") stop("the 2024 PocketMiner tables only have max_hit")
-    if (!is.na(min_residues)) stop("the 2024 PocketMiner tables have no residue counts, so --min-residues cannot be used")
-    score <- x$max_hit
-  }
-  if (is.null(score)) stop("no ", opt$pocketminer_score, " column in ", files)
+  columns <- paste0(prefix, c(opt$pocketminer_score, "n_residues"))
+  require_columns(x, c("uniprot_id", columns), files)
+  score <- x[[columns[1]]]
+  score[x[[columns[2]]] < min_residues] <- NA                  # too short: no score
   data.frame(uniprot_id = x$uniprot_id, score = score, method = source)
 }
 
@@ -98,7 +94,7 @@ combined <- merge(combined, pm_best, by = "uniprot_id", all.x = TRUE)
 combined$druggability[is.na(combined$druggability)] <- 0
 combined$CP_score[is.na(combined$CP_score)] <- 0
 
-# the higher of the two, and where it came from (fpocket wins a tie, as in 2024)
+# the higher of the two, and where it came from (fpocket wins a tie)
 combined$highest_score <- pmax(combined$druggability, combined$CP_score)
 fpocket_wins <- combined$highest_score == combined$druggability
 combined$source <- ifelse(fpocket_wins, combined$Fpocket_method, combined$PocketMiner_method)

@@ -1,22 +1,17 @@
 ### Gene annotation of a combined druggability table: UniProt ID -> gene name ###
 #
-# usage: Rscript annotate_scores.R --in <combined.csv> --out <annotated.csv> [--reuse <annotated.csv>] [--url <martservice>]
-#   --in     a table from combine_scores.R (or 1.0's druggability_scores.csv): first column = UniProt ID
-#   --reuse  option A: proteins found in this annotated table (e.g. 1.0's druggability_scores_annot2.0.csv) keep its
-#            gene name, description and biotype rows as they are; only the other proteins are looked up
-#   --url    BioMart service; default the Ensembl 116 archive, the last Ensembl release with BioMart
+# usage: Rscript annotate_scores.R --in <combined.csv> --out <annotated.csv> [--url <martservice>]
+#   --in     a table from combine_scores.R: first column = UniProt ID
+#   --url    BioMart service; default the Ensembl 116 archive, the last Ensembl release with BioMart and the release
+#            NetIntegRank names its genes with
 #
-# The lookup is the one that made the 1.0 table: id_annot() in PhD-MOC/MOC_pipe/R/functions.R (its UniProt route,
-# unchanged since 2025-06-02), as called by Druggability_analysis/R/drug_score_annotation.R with
-# input_type = "uniprot_gn_id" and convert_to = c("external_gene_name", "description", "gene_biotype"):
+# The lookup (gene name, description and biotype for each UniProt ID):
 #   1. look up every protein by Swiss-Prot accession (filter uniprotswissprot)
 #   2. look up every protein by any UniProt accession (filter uniprot_gn_id, includes TrEMBL)
 #   3. keep all Swiss-Prot matches; use lookup 2 only for proteins with no Swiss-Prot match
 #   4. remove the "[Source:...]" part of each description
 #   5. merge onto the table, keeping every protein (no match: empty gene name; several genes: several rows)
-# The only change: biomaRt::getBM() is replaced by query_biomart() from NetIntegRank 2.0 (copied unchanged below),
-# because no biomaRt available on conda reaches the Ensembl 116 archive.
-# Written 2026-11-18.
+# query_biomart() is the same function as in NetIntegRank's bin/run_ranking.R.
 
 
 # Ensembl 116 (June 2026) is the last Ensembl release that includes BioMart, and it is only served
@@ -108,21 +103,10 @@ cat("BioMart:", opt$url, "|", if (length(release)) release else "release not fou
 
 #### the table and the proteins to look up ####
 df <- read.csv(opt[["in"]])
-keys <- df[[1]]
-
-# option A: proteins already in the reuse table keep their rows from it; the rest are looked up
-reused <- NULL
-lookup_keys <- keys
-if (!is.null(opt$reuse)) {
-  old <- read.csv(opt$reuse)
-  reused <- old[old$uniprot_gn_id %in% keys, c(input_type, convert_to)]
-  lookup_keys <- setdiff(keys, old$uniprot_gn_id)
-  cat(length(unique(reused$uniprot_gn_id)), "proteins keep their names from", basename(opt$reuse), "|",
-      length(lookup_keys), "to look up\n")
-}
+lookup_keys <- df[[1]]
 
 
-#### lookups, as in id_annot() ####
+#### lookups ####
 strip_desc <- function(d) {
   d$description <- gsub("\\[.*?\\]", "", d$description)
   d
@@ -144,7 +128,6 @@ bm2 <- strip_desc(bm2)
 
 # 3. all Swiss-Prot matches, then lookup 2 for proteins without one
 annot <- rbind(bm1, bm2[!bm2[[input_type]] %in% bm1[[input_type]], , drop = FALSE])
-if (!is.null(reused)) annot <- rbind(reused, annot)
 
 # 5. merge back onto the table, keeping every protein
 annotated <- merge(annot, df, by.x = input_type, by.y = colnames(df)[1], all.y = TRUE, sort = FALSE)

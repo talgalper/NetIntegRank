@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 ### PocketMiner scoring: turns the per-residue predictions into one row per structure ###
-### (called by pocketminer_master.sh; the max_hit / num_hits rules are unchanged from the 2024 pocketminer_scoring.R)
+### (called by pocketminer_master.sh)
 #
 # usage: Rscript pocketminer_scores.R <results_dir> <threads> <min_residues> <window> <hit_threshold>
 #                                     <alphafold|swissmodel> <structures_dir> <min_conf>
@@ -13,8 +13,6 @@
 #
 # Confidence is read from the B-factor column of each residue's CA atom: AlphaFold pLDDT (0-100) or the SWISS-MODEL
 # QMEANDisCo local score (0-1, multiplied by 100 here so both sources use one scale).
-# Changes from 2026-11-18: the confident-region columns, short structures scored
-# instead of only listed, and the AF_/SM_ column names.
 
 suppressPackageStartupMessages(library(parallel))
 
@@ -81,7 +79,7 @@ score_one <- function(i) {
   confidence_avg <- window_mean(confidence)
 
   ## save the raw and averaged values per residue, then read them back so the summary below is
-  ## worked out from exactly the numbers that are on disk (as the 2024 script did)
+  ## worked out from exactly the numbers that are on disk
   out_file <- file.path(pocket_dir, file)
   write.table(data.frame(scores = scores, averages = averages, confidence = confidence, confidence_avg = confidence_avg),
               out_file, quote = FALSE, row.names = FALSE)
@@ -89,7 +87,7 @@ score_one <- function(i) {
   averages <- saved$averages
   confidence_avg <- saved$confidence_avg
 
-  ## as run (all residues), unchanged from 2024:
+  ## all windows:
   ## max_hit: the highest averaged score in the structure
   ## num_hits: how many separate stretches of the chain sit at or above the threshold
   stretches <- rle(averages >= hit_threshold)
@@ -99,7 +97,7 @@ score_one <- function(i) {
   ## confident regions only (a window is confident if its mean confidence is at least min_conf):
   ## max_hit_conf: the highest averaged score among confident windows (NA if the structure has none)
   ## num_hits_conf: hit stretches that reach the threshold inside a confident window
-  ## conf_at_max_hit: the mean confidence of the as-run max_hit window
+  ## conf_at_max_hit: the mean confidence of the max_hit window
   ## frac_low_conf: share of residues whose own confidence is below min_conf
   confident <- confidence_avg >= min_conf
   max_hit_conf <- if (any(confident)) max(averages[confident]) else NA_real_

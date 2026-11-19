@@ -13,12 +13,12 @@
 import os
 import sys
 
-## where the authors' PocketMiner code sits (copied unchanged, see upstream/provenance.txt)
+## where the authors' PocketMiner code sits (copied unchanged, see upstream_provenance.txt)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 upstream_src = os.path.join(script_dir, 'upstream', 'src')
 
 
-## output name for one structure, same rule as 2024:
+## output name for one structure:
 ## AlphaFold files are named by protein and fragment, SWISS-MODEL files by protein
 def output_name(pdb_path, source):
     name = os.path.basename(pdb_path)[:-len('.pdb')]
@@ -127,7 +127,7 @@ def run_batch(source, results_dir, model_prefix, pdb_paths):
                 check_weights_loaded(np, tf, model, model_prefix)
                 weights_checked = True
 
-            ## save one score per line (4 significant figures, as in 2024). The file is written under
+            ## save one score per line (4 significant figures). The file is written under
             ## a temporary name and renamed when complete, so a half-written file never counts as done.
             np.savetxt(out_file + '.tmp', predictions, fmt='%.4g', delimiter='\n')
             os.replace(out_file + '.tmp', out_file)

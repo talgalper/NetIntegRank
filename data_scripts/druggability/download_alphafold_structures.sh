@@ -4,8 +4,7 @@
 #
 # Downloads the AlphaFold DB bulk archive for one reference proteome (human by
 # default) from EBI, checks that it arrived whole, and unpacks the PDB files.
-# It repeats, step for step, what was done by hand on 2026-11-16 for AlphaFold
-# DB v6.
+# The bundled druggability table was built from AlphaFold DB v6.
 #
 # Usage
 #   ./download_alphafold_structures.sh                  # newest version EBI offers

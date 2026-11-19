@@ -2,10 +2,10 @@
 # usage: Rscript druggability_scores.R <alphafold|swissmodel> <results_dir> <threads> <struct_score.csv>
 #                                      <structures_dir> <min_residues> <min_conf>
 #
-# Parsing and the as-run summary scores are unchanged from the 2024 druggability_scores.R scripts (one per source).
-# Changes from 2026-11-18: residue counts, pocket confidence and the confident-only
-# columns, the minimum length, and column names starting with AF_ or SM_ (all except uniprot_id) so the two sources
-# merge easily. SWISS-MODEL confidence (QMEANDisCo, 0-1) is multiplied by 100 so both sources use one 0-100 scale.
+# For each structure: the best pocket's scores and the number of druggable pockets, over all pockets and over
+# confident pockets only (pocket confidence = mean confidence of the residues lining it), plus its residue count.
+# Column names start with AF_ or SM_ (all except uniprot_id) so the two sources merge easily. SWISS-MODEL confidence
+# (QMEANDisCo, 0-1) is multiplied by 100 so both sources use one 0-100 scale.
 #
 # Outputs, in results_dir:
 #   fpocket_druggability_full.csv  structures with at least min_residues residues
@@ -35,7 +35,7 @@ prefix <- if (source_type == "alphafold") "AF_" else "SM_"
 conf_scale <- if (source_type == "alphafold") 1 else 100   # QMEANDisCo 0-1 -> 0-100
 
 
-## parse one fpocket _info.txt into a descriptors x pockets table (unchanged from 2024)
+## parse one fpocket _info.txt into a descriptors x pockets table
 fpocket_format <- function(txt_file){
   # read in .txt file
   df <- read.delim(txt_file, sep = ",", header = F)
@@ -94,11 +94,11 @@ residue_conf <- function(pdb_file) {
 }
 
 
-## summarise one structure: best pocket's scores and number of druggable pockets (unchanged from 2024),
+## summarise one structure: best pocket's scores and number of druggable pockets,
 ## then the same counting only confident pockets
 summarise_file <- function(file) {
   path <- file.path(scores_dir, file)
-  if (file.size(path) == 0) return(NULL)   # empty fpocket output (no pockets), skipped as in 2024
+  if (file.size(path) == 0) return(NULL)   # empty fpocket output (no pockets), skipped
 
   name <- sub("_info\\.txt$", "", file)    # the structure file name without .pdb
   if (source_type == "alphafold") {
@@ -110,7 +110,7 @@ summarise_file <- function(file) {
     uniprot_id <- name
   }
 
-  ## as run, unchanged from 2024
+  ## all pockets
   data <- fpocket_format(path)
   pocket_max <- max(data[1,])
   druggability_max <- max(data[2,])
@@ -164,7 +164,7 @@ summarise_file <- function(file) {
 
 
 ## summarise all structures in parallel. Any structure that fails stops the script, so a table is never
-## made with structures silently missing (2024 reported the failure and carried on).
+## made with structures silently missing.
 files <- list.files(scores_dir, pattern = "_info\\.txt$")
 res <- mclapply(files, function(f) {
   tryCatch(summarise_file(f), error = function(e) paste("Could not summarise", f, ":", conditionMessage(e)))
@@ -178,7 +178,7 @@ cat(sprintf("%d of %d fpocket outputs summarised (%d with no pockets), %d pocket
             nrow(results), length(files), length(files) - nrow(results), nrow(pockets)))
 
 
-## add structure confidence from the filter step (SWISS-MODEL x 100), joined by structure file name as in 2024
+## add structure confidence from the filter step (SWISS-MODEL x 100), joined by structure file name
 struct_conf <- read.csv(struct_score_file)
 struct_conf$struct_score <- struct_conf$struct_score * conf_scale
 results$filename <- paste0(sub("_info\\.txt$", "", vapply(res, function(x) x$file, character(1))), ".pdb")
