@@ -115,6 +115,8 @@ Restart your shell and verify:
 conda --version
 ```
 
+> Recent Miniconda releases will not build any environment until Anaconda's Terms of Service for its default channels have been accepted: the first run stops with `CondaToSNonInteractiveError`, and the message gives the `conda tos accept` commands. Either accept them, or install [Miniforge](https://conda-forge.org/download/) instead of Miniconda; Miniforge uses only the conda-forge channel and has no such step. The pipeline's environments build with either.
+
 ### 5) Install nf-test
 
 ```bash
@@ -173,12 +175,10 @@ The params can be run in command line as well if you want to do your own scripti
   ```bash
   nextflow run main.nf -profile conda \
     --outdir results \
-    --scores path/to/scores.tsv \
-    --ppi_network path/to/ppi.tsv \
-    --druggability path/to/druggability.tsv \
-    --ml_scores path/to/ml_scores.tsv \
-    --citations path/to/citations.tsv
+    --scores path/to/scores.tsv
   ```
+
+  This uses the bundled reference data. To use other reference files, add `--reference_dir` or any of `--ppi_network`, `--druggability`, `--ml_scores` and `--citations` (see [Required inputs](#required-inputs)).
 
   ### Example starter command
 
@@ -188,10 +188,6 @@ The params can be run in command line as well if you want to do your own scripti
   nextflow run main.nf -profile conda \
     --outdir results_example \
     --scores example/logFC_scores_abs.tsv \
-    --ppi_network assets/STRING_physical_ENSG.csv \
-    --druggability assets/druggability_scores_annot.csv \
-    --ml_scores assets/ML_data.csv \
-    --citations assets/PubTator3_counts.csv \
     --hhnet_run_id example_run \
     --hhnet_num_permutations 100 \
     --hhnet_min_cluster_size 2 \
@@ -209,15 +205,16 @@ Be sure to test the pipeline before your first run. Jump to the [testing section
 
 ## Required inputs
 
-The pipeline currently expects the following required inputs:
+The only required input is:
 
 * `--scores`
-* `--ppi_network` (provided: human STRING PPI)
-* `--druggability` (provided)
-* `--ml_scores` (provided)
-* `--citations` (provided)
 
-The provided files are in `assets/` and are described under [Bundled reference data](#bundled-reference-data).
+The reference data (PPI network, druggability scores, ML scores and citation counts) defaults to the files bundled in `assets/`, described under [Bundled reference data](#bundled-reference-data). To use other files:
+
+* `--reference_dir`: a folder holding all four files under the bundled names (`STRING_physical_ENSG.csv`, `druggability_scores_annot.csv`, `ML_data.csv`, `PubTator3_counts.csv`)
+* `--ppi_network`, `--druggability`, `--ml_scores`, `--citations`: one file each, used for that input in place of the file from `--reference_dir` or `assets/`
+
+The reference files a run uses are printed when it starts.
 
 Optional inputs include:
 
@@ -226,18 +223,18 @@ Optional inputs include:
 * `--hhnet_run_id`
 * `--hhnet_dir`
 
-> feel free to update these datasets with more recent versions if you would like.
+> To build newer versions of the reference data, see [Updating the reference data](#updating-the-reference-data).
 
 ---
 
 ## Bundled reference data
 
-The files in `assets/` are the human reference datasets used in my PhD, and they are the defaults in the [parameter file](params/example_default.yaml). Version 2.0 updated the PPI network, the druggability scores and the citation counts. The files that shipped with 1.0 are kept in `assets/legacy_data/` (see [Legacy data](#legacy-data)). The scripts that download and build these files are in [`data_scripts/`](data_scripts/README.md).
+The files in `assets/` are the human reference datasets, and the pipeline uses them by default (see [Required inputs](#required-inputs)). Version 2.0 updated the PPI network, the druggability scores and the citation counts. The files that shipped with 1.0 (used in my PhD) are kept in `assets/legacy_data/` (see [Legacy data](#legacy-data)). To build newer versions, see [Updating the reference data](#updating-the-reference-data).
 
 | File | Contents | Source |
 |---|---|---|
 | `STRING_physical_ENSG.csv`, `STRING_physical_geneSymbol.csv` | Physical protein-protein interactions: 430,638 interactions between 17,828 genes, as Ensembl gene IDs or as gene symbols | STRING v12.5 |
-| `druggability_scores_annot.csv` | One structure-based druggability score per protein: 19,682 proteins, 18,913 gene names | AlphaFold DB v6 and SWISS-MODEL Repository structures, scored with fpocket and PocketMiner; gene names from Ensembl 116 |
+| `druggability_scores_annot.csv` | One structure-based druggability score per protein: 20,516 proteins, 19,433 gene names | AlphaFold DB v6 and SWISS-MODEL Repository structures, scored with fpocket and PocketMiner; gene names from Ensembl 116 |
 | `PubTator3_counts.csv` | Number of PubMed articles that mention each gene: 24,507 genes | PubTator3; gene names from Ensembl 116 |
 | `ML_data.csv` | Machine-learning target scores (`Prediction_Score_rf`) and the features behind them | Unchanged from 1.0 |
 
@@ -254,13 +251,14 @@ The files in `assets/` are the human reference datasets used in my PhD, and they
 `druggability_scores_annot.csv` gives each human protein a structure-based druggability score, `drug_score`, between 0 and 1.
 
 * **Structures.** AlphaFold DB v6 models of the human reference proteome (UP000005640, https://alphafold.ebi.ac.uk), and for each protein the SWISS-MODEL Repository model (https://swissmodel.expasy.org/repository, models of release 2026-09.1) with a sequence identity of at least 60% and the best QMEANDisCo global score. AlphaFold DB provides proteins longer than 2,700 residues as overlapping fragments, and each fragment is scored on its own.
-* **Filters.** Models with low overall confidence (mean pLDDT below 50 for AlphaFold, mean QMEANDisCo below 0.5 for SWISS-MODEL) and models shorter than 80 residues are not scored.
+* **Filters.** Models shorter than 80 residues are not scored. Models are not filtered on their overall confidence: the confident-region rule below leaves out their poorly modelled parts instead, so a mostly disordered protein is still scored on its well-modelled regions.
 * **Confident regions only.** Per-residue confidence (AlphaFold pLDDT, or the SWISS-MODEL QMEANDisCo local score multiplied by 100, so both are on a 0 to 100 scale) is used to ignore pockets in poorly modelled regions. A pocket or window counts only if its mean confidence is at least 70.
 * **`FP_score`:** fpocket 4.2.3 (default settings) druggability of the best pocket whose lining residues pass the confidence rule.
 * **`CP_score`:** PocketMiner cryptic-pocket score (Meller et al. 2023, *Nature Communications* 14:1177; code and model from the authors' repository, https://github.com/Mickdub/gvp, commit `187062d`). Each residue's prediction is averaged with the 10 residues on either side, and the highest average among windows that pass the confidence rule is kept.
 * **`drug_score`** is the higher of the protein's best `FP_score` and best `CP_score` across its AlphaFold fragments and its SWISS-MODEL model.
-* Proteins with no usable score have `drug_score` 0, so their genes are still ranked (577 proteins: mostly proteins whose only structures are under 80 residues, and proteins with no pocket or window in a confident region). Proteins whose structures all fail the overall-confidence filter are not in the table. Their genes have no `drug_score`, so they are reported in `final_ranked_incomplete.tsv` instead of being ranked.
+* Proteins with no usable score have `drug_score` 0, so their genes are still ranked (928 proteins: 531 with no pocket or window in a confident region, 394 whose only structures are under 80 residues, and 3 that score 0).
 * Gene names, descriptions and biotypes come from Ensembl 116, the release the pipeline names its genes with. There is one row per protein and gene name, and the pipeline keeps the highest `drug_score` per gene name.
+* Proteins that Ensembl 116 does not link to a gene have no gene name, and their scores cannot reach the pipeline's genes. This includes a few well-known genes whose main UniProt protein Ensembl 116 does not record, for example POLR2A (P24928) and LIN52 (Q52LA3). Such genes have no `drug_score`, so the pipeline lists them in `final_ranked_incomplete.tsv` rather than ranking them.
 
 | Column | Contents |
 |---|---|
@@ -296,6 +294,73 @@ The files in `assets/` are the human reference datasets used in my PhD, and they
 | `STRING_physical_ENSG_v12.0.csv`, `STRING_physical_geneSymbol_v12.0.csv` | STRING v12.0 physical network, combined score of at least 400 |
 | `druggability_scores_annot2.0.csv` | The 1.0 druggability table, from AlphaFold DB v4 and 2024 SWISS-MODEL structures |
 | `PubTator3_counts_2024-12.csv` | The 1.0 citation counts, from PubTator3 as downloaded in December 2024 |
+
+---
+
+## Updating the reference data
+
+The bundled files are fixed at their release. To build newer versions, run `update_data.nf`, a separate workflow in the same repository. It downloads the current data, builds the tables with the same scripts and settings that built the bundled files, and writes them to a new folder. It never changes `assets/`.
+
+```bash
+# STRING and citation counts: minutes, on any machine
+nextflow run update_data.nf -profile conda --datasets string,citations
+
+# everything, druggability included: hours, on Linux (see below)
+nextflow run update_data.nf -profile conda --datasets all --data_outdir reference_data/2027-03
+```
+
+Then point the pipeline at the new folder:
+
+```bash
+nextflow run main.nf -profile conda --scores my_scores.csv --reference_dir reference_data/2027-03
+```
+
+The folder (by default `reference_data/<date>` in the folder you run from) holds:
+
+* the four reference files under the names the pipeline reads. A file not rebuilt in the run is copied from `--reference_dir` (default `assets/`), or kept if the folder already has it from an earlier run, so the folder is always a complete set. `ML_data.csv` is always copied: it cannot be rebuilt.
+* `provenance/`: a record per dataset (source addresses, versions, download dates, sizes, SHA-256 checksums, software versions and settings) and `MANIFEST.tsv`, which gives each file's checksum and where it came from.
+* `build/`: the downloads and working files. They are reused when the run is repeated, so keep the folder if you may rebuild or rescore.
+
+**Datasets** (`--datasets`, comma-separated, or `all`):
+
+| Dataset | Builds | Needs |
+|---|---|---|
+| `string` | `STRING_physical_ENSG.csv`, `STRING_physical_geneSymbol.csv` | about 30 MB of downloads, a minute |
+| `citations` | `PubTator3_counts.csv` | a 760 MB download, about 4 GB of memory, a few minutes, Ensembl 116 BioMart |
+| `druggability` | `druggability_scores_annot.csv` | Linux, many CPUs (fpocket and PocketMiner take about 2 hours on 32 CPUs, 4 on 16), 11 GB of downloads, about 80 GB of free disk while it runs, Ensembl 116 BioMart |
+
+The druggability rebuild checks the operating system, the free disk and the tools it needs before it starts, and stops with a message if one falls short. At the end it packs its large working files into compressed archives (`--pack_working_files false` keeps them unpacked), which leaves about 16 GB in `build/`, most of it the two download archives. The SWISS-MODEL archive is replaced with every SWISS-MODEL release and cannot be downloaded again later, so keep it if you may need to rebuild this version.
+
+**Options:**
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--data_outdir` | `reference_data/<date>` | Folder for the new set |
+| `--reference_dir` | `assets/` | Where the files that are not rebuilt are copied from |
+| `--data_cpus` | all CPUs | CPUs for the druggability steps |
+| `--string_version`, `--string_info_version` | `12.5`, `12.0` | STRING release of the links file, and of the protein info and aliases files (STRING 12.5 reuses the 12.0 files; for a release with its own, give the same version twice) |
+| `--gene2pubtator3` | download | A kept copy of `gene2pubtator3.gz`, to rebuild an earlier citation table exactly (NCBI replaces the file with each PubTator3 release) |
+| `--alphafold_version` | `latest` | AlphaFold DB version to download, or a number such as `6` |
+| `--alphafold_structures`, `--swissmodel_structures` | download | Score a folder of your own structures instead of downloading that source (named `AF-<UniProt ID>-F<n>-model_v<n>.pdb` and `<UniProt ID>.pdb`; checked before scoring) |
+| `--min_struct_conf_af`, `--min_struct_conf_sm` | `0`, `0` | Whole-model confidence filter (mean pLDDT 0-100, mean QMEANDisCo 0-1); 0 scores every structure |
+| `--min_residues` | `80` | Structures shorter than this are not scored |
+| `--min_conf` | `70` | Pockets and windows count only where their mean confidence is at least this |
+| `--pocketminer_window`, `--pocketminer_threshold` | `10`, `0.7` | PocketMiner window (residues on either side) and hit threshold |
+| `--pack_working_files` | `true` | Pack the druggability working files at the end |
+| `--min_free_disk_gb` | `80` | Free disk the druggability rebuild needs before it starts (0 skips the check) |
+| `--pocketminer_python` | conda environment | A Python with PocketMiner's packages, for runs without `-profile conda` |
+
+The defaults are the settings that built the bundled files. Changing a scoring setting gives a table built by a different method; the setting is recorded in its provenance.
+
+**Stopping and resuming.** Run the same command again with `-resume` and the same `--data_outdir`. Finished steps are skipped, and fpocket and PocketMiner carry on from the last structure they finished. To rescore with a different `--min_residues`, `--min_conf` or PocketMiner setting, rerun into the same folder with `-resume`: the structures and the per-structure fpocket and PocketMiner outputs are reused and only the tables are rebuilt. A different whole-model filter or a new data release changes the set of structures, so it goes into a new folder: the scoring steps refuse to reuse working files made from different structures.
+
+**Ensembl.** The citation counts and the druggability gene names are looked up in the Ensembl 116 BioMart archive. When it is unreachable, these steps wait and try again (after 10, 20 and 40 minutes) before the run stops.
+
+**Environments.** With `-profile conda`, `update_data.nf` uses `envs/data.yaml` (R, fpocket 4.2.3, aria2, zstd) and `envs/pocketminer.yaml` (Python 3.7 with TensorFlow 2.1.0 for PocketMiner). Building the PocketMiner environment compiles mdtraj, which needs a C compiler on the system (Linux: `build-essential`; macOS: the Xcode command line tools).
+
+Each step can also be run by hand, without Nextflow: see [`data_scripts/`](data_scripts/README.md).
+
+> **Maintainers:** to make a new set the bundled data, run `data_scripts/promote_data.sh <set folder> --label <dataset>=<version of the bundled file>` (for example `--label string=v12.5`). It checks the new files against the bundled ones, moves the bundled files to `assets/legacy_data/` under their version names, copies the new files in and lists what is left to do (README, test snapshot, version history). The provenance records stay in the set folder, outside git.
 
 ---
 
@@ -405,6 +470,10 @@ If `--gene_map` is not provided, the ranking stage attempts to reuse an annotati
 * `--outdir`
   Output directory.
   Default: `results`
+
+* `--reference_dir`
+  Folder holding the four reference files under the bundled names. A per-file flag (`--ppi_network`, `--druggability`, `--ml_scores`, `--citations`) replaces that one file.
+  Default: `assets/` in the pipeline folder
 
 ---
 
@@ -680,11 +749,13 @@ The first update to the original version. **Rankings from 2.0 are not byte ident
 
 * **Updated reference data.** The new files are described under [Bundled reference data](#bundled-reference-data); the files that shipped with 1.0 are kept in `assets/legacy_data/` (see [Legacy data](#legacy-data)).
   * *PPI network:* STRING 12.0 to 12.5, at the same cut-off (combined score of at least 400). Each interaction is now listed once.
-  * *Druggability:* rebuilt from new structures (AlphaFold DB v4 to v6, SWISS-MODEL Repository 2024 to 2026), with fpocket and PocketMiner run again on every structure. Pockets and windows now count only in confidently modelled regions, and the 80-residue minimum applies to both tools. Gene names come from Ensembl 116, the release the pipeline names its genes with. The file is renamed `druggability_scores_annot.csv` (was `druggability_scores_annot2.0.csv`) and columns are renamed: `uniprot_gn_id` to `uniprot_id`, `Fpocket_method` to `FP_source`, `struct_score` to `FP_struct_score`, `PocketMiner_method` to `CP_source` and `source` to `drug_score_source`; `drug_score_tool` is new. The pipeline reads only `external_gene_name` and `drug_score`.
+  * *Druggability:* rebuilt from new structures (AlphaFold DB v4 to v6, SWISS-MODEL Repository 2024 to 2026), with fpocket and PocketMiner run again on every structure. Pockets and windows now count only in confidently modelled regions, which replaces the filter on whole-model confidence, and the 80-residue minimum applies to both tools. Gene names come from Ensembl 116, the release the pipeline names its genes with. The file is renamed `druggability_scores_annot.csv` (was `druggability_scores_annot2.0.csv`) and columns are renamed: `uniprot_gn_id` to `uniprot_id`, `Fpocket_method` to `FP_source`, `struct_score` to `FP_struct_score`, `PocketMiner_method` to `CP_source` and `source` to `drug_score_source`; `drug_score_tool` is new. The pipeline reads only `external_gene_name` and `drug_score`.
   * *Citation counts:* regenerated from PubTator3 as downloaded on 13 November 2026. Every article is counted, for human genes only, named from Ensembl 116.
   * *ML scores:* unchanged.
 
-* **Scripts for the reference data.** The scripts that download and build the PPI network, druggability and citation files are in `data_scripts/`, with instructions in its README.
+* **Bundled reference data used by default.** `--ppi_network`, `--druggability`, `--ml_scores` and `--citations` default to the files in `assets/`, so `--scores` is the only required input. `--reference_dir` points a run at another folder of reference files, and each run prints the reference files it uses.
+
+* **Updating the reference data.** `update_data.nf` builds new versions of the PPI network, druggability and citation files into a new folder, used with `--reference_dir` (see [Updating the reference data](#updating-the-reference-data)). The scripts it runs are in `data_scripts/`, with instructions for running them by hand in its README.
 
 * **Input formats corrected.** The input-format section now lists the columns the pipeline actually requires, and says that ML scores cannot be used as a ranking feature.
 
