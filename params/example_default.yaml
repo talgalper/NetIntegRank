@@ -1,10 +1,14 @@
 outdir: results_example # replace with actual name i.e. "breast_cancer_results"
 
 scores: example/logFC_scores_abs.tsv # replace with actual path to score file
-ppi_network: assets/STRING_physical_ENSG.csv
-druggability: assets/druggability_scores_annot.csv
-ml_scores: assets/ML_data.csv
-citations: assets/PubTator3_counts.csv
+
+# reference data: null uses the bundled files in assets/ (see README, "Bundled reference data")
+reference_dir: null # or a folder holding all four files under the bundled names
+ppi_network: null   # or a path, to replace this one file only
+druggability: null
+ml_scores: null
+citations: null
+
 gene_map: null
 id_annot_cache: null
 
