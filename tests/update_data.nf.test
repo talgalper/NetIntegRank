@@ -1,0 +1,91 @@
+nextflow_pipeline {
+
+    name "Test update_data.nf (reference data updates)"
+    script "update_data.nf"
+
+    // Stub runs: they check the wiring, the checks before the run and the finished set, without downloading or
+    // building anything. No conda environments are built for them (the stubs only write small placeholder files).
+
+    test("Stub run of every dataset gives a complete reference set with a manifest") {
+        options "-stub-run"
+
+        when {
+            params {
+                datasets = "all"
+                data_outdir = "${outputDir}/set"
+                data_conda_env = null
+                pocketminer_python = "python3"
+            }
+        }
+
+        then {
+            assert workflow.success
+            def set = "${outputDir}/set"
+            ["STRING_physical_ENSG.csv", "STRING_physical_geneSymbol.csv", "PubTator3_counts.csv",
+             "druggability_scores_annot.csv", "ML_data.csv"].each { assert path("${set}/${it}").exists() }
+            ["STRING", "citations", "druggability"].each { assert path("${set}/provenance/${it}.provenance.txt").exists() }
+
+            def manifest = path("${set}/provenance/MANIFEST.tsv").readLines()
+            assert manifest.size() == 6
+            assert manifest.findAll { it.contains("built by update_data.nf") }.size() == 4
+            assert manifest.find { it.startsWith("ML_data.csv") }.contains("copied from")
+            // the copied file is the bundled one
+            assert path("${set}/ML_data.csv").md5 == path("${projectDir}/assets/ML_data.csv").md5
+        }
+    }
+
+    test("Stub run of STRING only copies the other files from assets/") {
+        options "-stub-run"
+
+        when {
+            params {
+                datasets = "string"
+                data_outdir = "${outputDir}/set"
+                data_conda_env = null
+            }
+        }
+
+        then {
+            assert workflow.success
+            def manifest = path("${outputDir}/set/provenance/MANIFEST.tsv").readLines()
+            assert manifest.findAll { it.contains("built by update_data.nf") }.size() == 2
+            assert manifest.findAll { it.contains("copied from") }.size() == 3
+            assert path("${outputDir}/set/druggability_scores_annot.csv").md5 ==
+                   path("${projectDir}/assets/druggability_scores_annot.csv").md5
+            assert workflow.trace.tasks().size() == 2
+        }
+    }
+
+    test("Refuses an unknown dataset") {
+        options "-stub-run"
+
+        when {
+            params {
+                datasets = "string,stringdb"
+                data_outdir = "${outputDir}/set"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("Unknown --datasets stringdb") }
+        }
+    }
+
+    test("Refuses to write into assets/") {
+        options "-stub-run"
+
+        when {
+            params {
+                datasets = "string"
+                data_outdir = "${projectDir}/assets/new_set"
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.stdout.any { it.contains("must be outside assets/") }
+            assert !path("${projectDir}/assets/new_set").exists()
+        }
+    }
+}

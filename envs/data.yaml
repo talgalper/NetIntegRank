@@ -1,0 +1,20 @@
+name: netintegrank-data
+# Environment for update_data.nf: every step except the PocketMiner predictions (see pocketminer.yaml).
+# R for the STRING, citation and druggability scripts, fpocket for pocket detection, aria2 for fast downloads
+# from EBI, zstd for packing the druggability working files at the end.
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.5
+  - r-data.table
+  - r-httr
+  - r-bio3d=2.4_5
+  - r-readr
+  - r-progress
+  - fpocket=4.2.3
+  - python=3.12
+  - aria2
+  - zstd
+  - curl

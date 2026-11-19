@@ -1,5 +1,6 @@
 process RANKING {
   tag "ranking"
+  label 'ranking'
   publishDir "${params.outdir}/ranking", mode: 'copy', overwrite: true
 
   input:

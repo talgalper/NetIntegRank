@@ -12,17 +12,47 @@ library(httr)
 #   gene2pubtator3: https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/gene2pubtator3.gz (NCBI replaces this file with
 #                   each PubTator3 release; the bundled counts use the file downloaded on 2026-11-13)
 #   Ensembl 116 BioMart: https://jun2026.archive.ensembl.org/biomart/martservice (needs internet)
+#
+# usage: Rscript update_citation_data.R [--gene2pubtator3 <file>] [--out-dir citation_data] [--out <csv>]
+#   --gene2pubtator3  use this copy of gene2pubtator3.gz instead of downloading NCBI's current file (for example a
+#                     kept copy, to rebuild an earlier table exactly)
+#   --out-dir         where the download, the checkpoint, the output and the provenance record go (default
+#                     citation_data, relative to where the script is run). A download already there is used again.
+#   --out             output file (default <out-dir>/PubTator3_counts_noFilt_<date>.csv)
+args <- commandArgs(trailingOnly = TRUE)
+opt <- list(gene2pubtator3 = NULL, out_dir = "citation_data", out = NULL)
+if (length(args) %% 2 != 0) stop("arguments come in --name value pairs; see the usage at the top of the script")
+for (i in seq(1, length(args), by = 2)) {
+  key <- gsub("-", "_", sub("^--", "", args[i]))
+  if (!key %in% names(opt)) stop("unknown option ", args[i], "; see the usage at the top of the script")
+  opt[[key]] <- args[i + 1]
+}
 
-
-# where the download, the checkpoint and the output go (relative to where the script is run)
-data_dir <- "citation_data"
-dir.create(data_dir, showWarnings = FALSE)
+# where the download, the checkpoint and the output go
+data_dir <- opt$out_dir
+dir.create(data_dir, showWarnings = FALSE, recursive = TRUE)
+out_file <- if (is.null(opt$out)) file.path(data_dir, paste0("PubTator3_counts_noFilt_", format(Sys.Date(), "%Y.%m.%d"), ".csv")) else opt$out
 
 # get pubtator3 gene data (~760 MB)
 options(timeout = 3600)
-gene2pubtator3_file <- file.path(data_dir, "gene2pubtator3.gz")
-if (!file.exists(gene2pubtator3_file)) {
-  download.file("https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/gene2pubtator3.gz", gene2pubtator3_file, mode = "wb")
+gene2pubtator3_url <- "https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/gene2pubtator3.gz"
+server_date <- NA
+if (!is.null(opt$gene2pubtator3)) {
+  gene2pubtator3_file <- opt$gene2pubtator3
+  if (!file.exists(gene2pubtator3_file)) stop("--gene2pubtator3 file not found: ", gene2pubtator3_file)
+} else {
+  gene2pubtator3_file <- file.path(data_dir, "gene2pubtator3.gz")
+  server_date_file <- paste0(gene2pubtator3_file, ".server_date")   # kept beside the download for later runs
+  if (!file.exists(gene2pubtator3_file)) {
+    head_resp <- tryCatch(HEAD(gene2pubtator3_url, timeout(60)), error = function(e) NULL)
+    if (!is.null(head_resp) && !is.null(headers(head_resp)[["last-modified"]])) {
+      writeLines(headers(head_resp)[["last-modified"]], server_date_file)
+    }
+    # download beside the final name and rename at the end, so a broken download is never taken for a finished one
+    download.file(gene2pubtator3_url, paste0(gene2pubtator3_file, ".part"), mode = "wb")
+    file.rename(paste0(gene2pubtator3_file, ".part"), gene2pubtator3_file)
+  }
+  if (file.exists(server_date_file)) server_date <- readLines(server_date_file, n = 1)
 }
 
 # read in data (only PMID and Concept_ID, the NCBI gene ID, are needed: keeps memory down)
@@ -143,11 +173,44 @@ citation_counts <- citation_counts[, .(counts = sum(counts)), by = .(symbol = ex
 citation_counts <- citation_counts[order(-counts, symbol)]
 
 # same layout as assets/PubTator3_counts.csv ("symbol","counts"); copy it there under that name
-fwrite(citation_counts, file.path(data_dir, paste0("PubTator3_counts_noFilt_", format(Sys.Date(), "%Y.%m.%d"), ".csv")), quote = TRUE)
+fwrite(citation_counts, out_file, quote = TRUE)
 
 
 # quick checks
 print(nrow(citation_counts))
 print(summary(citation_counts$counts))
 print(citation_counts[symbol %in% c("TP53", "TNF", "EGFR", "BRCA1")])
-hist(log10(citation_counts$counts))
+if (interactive()) hist(log10(citation_counts$counts))
+
+
+#### provenance record: source, size, checksum and counts, next to the output ####
+sha256 <- function(f) {
+  tool <- if (nzchar(Sys.which("sha256sum"))) c("sha256sum") else c("shasum", "-a", "256")
+  sub(" .*", "", system2(tool[1], c(tool[-1], shQuote(f)), stdout = TRUE))
+}
+file_line <- function(f) sprintf("  %-40s %14s bytes  SHA-256 %s", basename(f), format(file.size(f), big.mark = ","), sha256(f))
+download_date <- format(file.mtime(gene2pubtator3_file), "%Y-%m-%d", tz = "UTC")
+writeLines(c(
+  "PubTator3 citation counts: provenance record",
+  sprintf("Written by update_citation_data.R on %s", format(Sys.time(), "%Y-%m-%d %H:%M %Z", tz = "UTC")),
+  "",
+  sprintf("data_version: PubTator3 gene2pubtator3 of %s", download_date),
+  sprintf("Source: %s", if (is.null(opt$gene2pubtator3)) gene2pubtator3_url else
+            paste0("a local copy given with --gene2pubtator3 (", normalizePath(gene2pubtator3_file), ")")),
+  "  NCBI replaces this file with each PubTator3 release; keep the download to rebuild this table exactly.",
+  if (!is.na(server_date)) sprintf("  File date on server: %s", server_date),
+  sprintf("  File date here (download date): %s", format(file.mtime(gene2pubtator3_file), "%Y-%m-%d %H:%M %Z", tz = "UTC")),
+  file_line(gene2pubtator3_file),
+  sprintf("Gene names: Ensembl 116 BioMart, %s", BIOMART_URL),
+  "Method: distinct PubMed articles per NCBI gene ID, every article, mentions of more than one gene dropped,",
+  "  human genes only (named by Ensembl 116), summed per gene name",
+  "",
+  "Output:",
+  file_line(out_file),
+  sprintf("  %s gene names; counts median %s, max %s", format(nrow(citation_counts), big.mark = ","),
+          format(median(citation_counts$counts)), format(max(citation_counts$counts), big.mark = ",")),
+  "",
+  sprintf("Software: %s; data.table %s; httr %s", R.version.string, as.character(packageVersion("data.table")),
+          as.character(packageVersion("httr")))
+), file.path(data_dir, "citations.provenance.txt"))
+cat("Wrote", out_file, "and", file.path(data_dir, "citations.provenance.txt"), "\n")

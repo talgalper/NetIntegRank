@@ -1,6 +1,7 @@
 // modules/local/hhnet_post.nf
 process HHNET_POST {
   tag "hhnet_post"
+  label 'hhnet_post'
   publishDir "${params.outdir}", mode: 'copy', overwrite: true
 
   input:

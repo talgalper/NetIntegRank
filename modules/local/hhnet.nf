@@ -1,6 +1,7 @@
 // modules/local/hhnet.nf
 process HHNET {
   tag "${params.hhnet_network_name}_${params.hhnet_score_name}"
+  label 'hhnet'
   publishDir "${params.outdir}/hhnet", mode: 'copy', overwrite: true
 
   input:

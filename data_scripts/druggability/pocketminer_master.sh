@@ -7,9 +7,15 @@
 # options: -i  structures dir (default: <this dir>/<source>/structures_filtered/pdb, made by filter_structures.sh)
 #          -o  results dir    (default: <this dir>/<source>/pocketminer_results)
 #          -t  threads        (default: all CPUs)
+#          -m  minimum chain length for the main table   (default MIN_RESIDUES below)
+#          -w  residues averaged on either side          (default WINDOW below)
+#          -s  hit threshold for an averaged score       (default HIT_THRESHOLD below)
+#          -c  confidence cut-off for a confident window (default MIN_CONF below)
 #
 # Re-runnable: structures that already have a PocketMiner prediction in the results dir are skipped,
-# so a stopped run carries on where it left off. Structure files are never moved or changed.
+# so a stopped run carries on where it left off. A results dir is only reused for exactly the same structure
+# files (compared by checksum). Outputs packed by pack_results.sh are unpacked first. Structure files are never
+# moved or changed.
 
 
 
@@ -17,18 +23,18 @@
 if [ -z "${BASH_VERSION:-}" ]; then echo "Run with bash, not sh"; exit 1; fi
 set -euo pipefail
 
-## scoring settings, unchanged from 2024
+## scoring settings (defaults; -m, -w, -s and -c set them for one run)
 MIN_RESIDUES=80      # structures shorter than this are scored but left out of the main table (small_structures.csv)
 WINDOW=10            # each residue is averaged with this many residues on either side
 HIT_THRESHOLD=0.7    # an averaged score at or above this counts as a cryptic pocket hit
-## added 2026-11-18: confident regions
 MIN_CONF=70          # a window is confident if its mean pLDDT (AlphaFold) or QMEANDisCo x 100 (SWISS-MODEL) is at least this
 
 ## structures handed to a worker at a time (the model is loaded once per batch, not once per structure)
 BATCH=100
 
 usage() {
-  echo "Usage: $0 <alphafold|swissmodel> [-i structures_dir] [-o results_dir] [-t threads]"
+  echo "Usage: $0 <alphafold|swissmodel> [-i structures_dir] [-o results_dir] [-t threads] [-m min_residues]"
+  echo "       [-w window] [-s hit_threshold] [-c min_conf]"
 }
 
 ## arguments: source sets the file naming and default folders, paths and threads are optional
@@ -45,14 +51,23 @@ shift
 structures_dir="$script_dir/$source_type/structures_filtered/pdb"
 results_dir="$script_dir/$source_type/pocketminer_results"
 threads="$(nproc)"
-while getopts "i:o:t:" opt; do
+while getopts "i:o:t:m:w:s:c:" opt; do
   case "$opt" in
     i) structures_dir="$OPTARG" ;;
     o) results_dir="$OPTARG" ;;
     t) threads="$OPTARG" ;;
+    m) MIN_RESIDUES="$OPTARG" ;;
+    w) WINDOW="$OPTARG" ;;
+    s) HIT_THRESHOLD="$OPTARG" ;;
+    c) MIN_CONF="$OPTARG" ;;
     *) usage; exit 1 ;;
   esac
 done
+if ! [[ "$MIN_RESIDUES" =~ ^[0-9]+$ ]]; then echo "-m must be a whole number, e.g. 80"; exit 1; fi
+if ! [[ "$WINDOW" =~ ^[0-9]+$ ]]; then echo "-w must be a whole number, e.g. 10"; exit 1; fi
+if ! [[ "$HIT_THRESHOLD" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]]; then echo "-s must be a number from 0 to 1, e.g. 0.7"; exit 1; fi
+if ! [[ "$MIN_CONF" =~ ^[0-9]+([.][0-9]+)?$ ]]; then echo "-c must be a number on the 0-100 scale, e.g. 70"; exit 1; fi
+source "$script_dir/src/packed_dirs.sh"
 
 ## check there are structures to score, then set up the results dir
 if [ ! -d "$structures_dir" ]; then
@@ -65,8 +80,11 @@ if [ "$n_structures" -eq 0 ]; then
   echo "$structures_dir does not contain any .pdb files, please add at least 1 to begin"
   exit 1
 fi
-mkdir -p "$results_dir"/{txt_results,pocket_results,logs}
+mkdir -p "$results_dir"
 results_dir="$(cd "$results_dir" && pwd)"
+unpack_dir "$results_dir" txt_results      # outputs packed by pack_results.sh after an earlier run
+unpack_dir "$results_dir" pocket_results
+mkdir -p "$results_dir"/{txt_results,pocket_results,logs}
 
 ## PocketMiner setup: the authors' code and trained model sit in pocketminer_src/upstream/, and
 ## Python comes from the "pocketminer" conda env (Python 3.7, TensorFlow 2.1.0, mdtraj).

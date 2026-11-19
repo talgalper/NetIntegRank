@@ -43,4 +43,8 @@ data_scripts/druggability/fpocket-*/
 data_scripts/druggability/combined/
 data_scripts/druggability/annotated/
 data_scripts/druggability/package/
+data_scripts/druggability/packed.txt
+
+# update_data.nf: new reference data sets, by default in reference_data/ of the folder it is run from
+reference_data/
 Rplots.pdf

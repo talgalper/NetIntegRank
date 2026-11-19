@@ -1,0 +1,20 @@
+name: netintegrank-pocketminer
+# Python environment for PocketMiner (Meller et al. 2023), used by update_data.nf and by
+# data_scripts/druggability/pocketminer_master.sh (set POCKETMINER_PYTHON to this environment's python).
+# The trained model needs TensorFlow 2.1.0, which needs Python 3.7 and protobuf 3.x. mdtraj 1.9.9 has no
+# conda-forge build for Python 3.7, so pip builds it from source with the system C compiler (Linux: gcc, e.g.
+# the build-essential package; macOS: the Xcode command line tools). Conda's own compilers cannot build it for
+# Python 3.7 (their system headers lack crypt.h).
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.7.12
+  - numpy=1.18.1
+  - scipy=1.4.1
+  - pip
+  - pip:
+      - tensorflow==2.1.0
+      - protobuf==3.20.1
+      - mdtraj==1.9.9
+      - tqdm==4.42.1
