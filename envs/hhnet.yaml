@@ -14,5 +14,7 @@ dependencies:
   - parallel
   - gfortran
   - numpy-base=1.14
+  - libcxx<23 #libcxx (the Mac's C++ library) builds from 13 Nov 2026 on drop a symbol matplotlib 2.1 needs
+  - zlib=1.2.13
   - pip:
       - argparse==1.4.0
