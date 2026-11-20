@@ -747,6 +747,9 @@ The first update to the original version. **Rankings from 2.0 are not byte ident
 * **Updated for Nextflow 26.10.**
   The workflow now uses the current `channel.fromPath` spelling in place of the deprecated `Channel.fromPath`, and the two R scripts are called by name from `bin/` in the same way as `run_hhnet.sh`, so they must be executable (see Installation, step 6). `nextflow lint` reports no errors or warnings. The full test suite passes on Nextflow 26.10.5 with nf-test 0.9.5, with outputs identical to those from Nextflow 26.04.6.
 
+* **HHNet environment pinned for macOS.**
+  From 13 November 2026, the conda-forge builds of `libcxx` (the C++ standard library Conda installs on macOS) no longer contain a function that matplotlib 2.1 needs, so on macOS HHNet failed when it drew its cluster-size plot. `envs/hhnet.yaml` now requires `libcxx<23`. Linux does not use `libcxx`, so results there are unaffected. It also requires `zlib=1.2.13`: without it, Conda on macOS chose between two sets of compression and image libraries from one run to the next, and the pin keeps the set the tests were run with (Linux already gets that set). The test suite gives identical outputs on macOS and Linux.
+
 * **Updated reference data.** The new files are described under [Bundled reference data](#bundled-reference-data); the files that shipped with 1.0 are kept in `assets/legacy_data/` (see [Legacy data](#legacy-data)).
   * *PPI network:* STRING 12.0 to 12.5, at the same cut-off (combined score of at least 400). Each interaction is now listed once.
   * *Druggability:* rebuilt from new structures (AlphaFold DB v4 to v6, SWISS-MODEL Repository 2024 to 2026), with fpocket and PocketMiner run again on every structure. Pockets and windows now count only in confidently modelled regions, which replaces the filter on whole-model confidence, and the 80-residue minimum applies to both tools. Gene names come from Ensembl 116, the release the pipeline names its genes with. The file is renamed `druggability_scores_annot.csv` (was `druggability_scores_annot2.0.csv`) and columns are renamed: `uniprot_gn_id` to `uniprot_id`, `Fpocket_method` to `FP_source`, `struct_score` to `FP_struct_score`, `PocketMiner_method` to `CP_source` and `source` to `drug_score_source`; `drug_score_tool` is new. The pipeline reads only `external_gene_name` and `drug_score`.
@@ -769,4 +772,9 @@ The original version: HHNet clustering, post-processing into network metrics, an
 
 ## Acknowledgement
 
-NetIntegRank is based on work developed during my PhD, with a focus on dysregulated subnetwork discovery and integrated evidence ranking for small molecule target prioritisation in cancer.
+NetIntegRank is based on work developed during my PhD, with a focus on dysregulated subnetwork discovery and integrated evidence ranking for small molecule target prioritisation in cancer. 
+
+This pipeline calls on several tools designed by other talented groups so be sure to check out their projects as well:
+- Hierarchical HotNet: https://github.com/raphael-group/hierarchical-hotnet.git
+- Fpocket: https://github.com/Discngine/fpocket.git
+- PocketMiner: https://github.com/Mickdub/gvp.git
