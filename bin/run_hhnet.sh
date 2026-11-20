@@ -22,7 +22,7 @@ Optional:
   --compile_fortran        Fortran compilation mode: auto|always|never (default: auto)
   --hhnet_dir              Path to hierarchical_hotnet directory (default: <script_dir>/hierarchical_hotnet
                            fallback: <script_dir>/hierarchical-hotnet)
-  --intermediate_cache_dir Directory to cache intermediate HHNet files keyed by (PPI, score) hash.
+  --intermediate_cache_dir Directory to cache intermediate HHNet files keyed by (PPI, score) hash and permutation count.
                            If omitted, no intermediate caching is performed.
   -h, --help               Show this help message
 
@@ -45,8 +45,9 @@ Caching:
 
   Intermediate files (score_bins, permuted scores, hierarchies):
     If --intermediate_cache_dir is provided, these files are cached under:
-      <intermediate_cache_dir>/<ppi_hash>_<score_hash>/
-    The cache key is a SHA-256 hash of (indexed_edge_list, scores_0.tsv).
+      <intermediate_cache_dir>/<ppi_hash>_<score_hash>_n<num_permutations>/
+    The cache key is a SHA-256 hash of (indexed_edge_list, scores_0.tsv) plus the number of permutations,
+    so a run with a different --num_permutations computes its own intermediates.
     A cache hit skips find_permutation_bins, permute_scores, and construct_hierarchy entirely,
     and links the cached files into the current intermediate directory before process_hierarchies.
 USAGE
@@ -502,7 +503,7 @@ stage_cached_similarity_matrix() {
 }
 
 # ---------------------------------------------------------------------------
-# Intermediate-file cache: keyed on SHA-256(indexed_edge_list + scores_0.tsv)
+# Intermediate-file cache: keyed on SHA-256(indexed_edge_list + scores_0.tsv) and the permutation count
 # ---------------------------------------------------------------------------
 # Returns 0 (cache hit) or 1 (cache miss).
 # On a hit: symlinks every file from the cache dir into INTERMEDIATE_DIR/<NETWORK>_<SCORE>/
@@ -513,11 +514,12 @@ check_cached_intermediates() {
   local scores0_file="$2"
   local intermediate_dir="$3"   # e.g. .../intermediate/<NETWORK>_<SCORE>
   local cache_root="$4"
+  local num_permutations="$5"
 
   local ppi_hash score_hash cache_key cache_dir stamp
   ppi_hash="$(compute_file_sha256 "$edge_list_file")"
   score_hash="$(compute_file_sha256 "$scores0_file")"
-  cache_key="${ppi_hash}_${score_hash}"
+  cache_key="${ppi_hash}_${score_hash}_n${num_permutations}"
   cache_dir="${cache_root}/${cache_key}"
   stamp="${cache_dir}/.complete"
 
@@ -621,7 +623,8 @@ if [[ -n "$INTERMEDIATE_CACHE_DIR" ]]; then
       "$EDGE_LIST_FILE" \
       "$SCORES0_FILE" \
       "${INTERMEDIATE_DIR}/${NETWORK}_${SCORE}" \
-      "$INTERMEDIATE_CACHE_DIR"; then
+      "$INTERMEDIATE_CACHE_DIR" \
+      "$NUM_PERMUTATIONS"; then
     _INTERMEDIATE_CACHE_HIT=1
   fi
 fi
